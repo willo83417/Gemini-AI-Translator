@@ -23,7 +23,43 @@ Example: http://192.168.31.92:3000,192.168.31.92:3000,http://localhost:3000
 # Gemini AI Translator
 
 This is a modern translation application powered by the Google Gemini API. It provides a clean, mobile-first user interface for fast and accurate text, voice, and image translation between multiple languages, and supports both online and offline modes.  
-🚀[Live Demo](https://willo83417.github.io/Gemini-AI-Translator-offline/ "Gemini AI Translator")
+🚀[Live Demo](https://willo83417.github.io/Gemini-AI-Translator-offline/ "Gemini AI Translator")  
+
+## 📸 Screenshots
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <img src="screenshots/P1.png" width="200" alt="Screenshot 1"/>
+      </td>
+      <td align="center">
+        <img src="screenshots/P2.png" width="200" alt="Screenshot 2"/>
+      </td>
+      <td align="center">
+        <img src="screenshots/P3.png" width="200" alt="Screenshot 3"/>
+      </td>
+      <td align="center">
+        <img src="screenshots/P4.png" width="200" alt="Screenshot 4"/>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="screenshots/P5.png" width="200" alt="Screenshot 5"/>
+      </td>
+      <td align="center">
+        <img src="screenshots/P6.png" width="200" alt="Screenshot 6"/>
+      </td>
+      <td align="center">
+        <img src="screenshots/P7.png" width="200" alt="Screenshot 7"/>
+      </td>
+      <td align="center">
+        <img src="screenshots/P8.png" width="200" alt="Screenshot 8"/>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## Design Features
 
 ### Core Translation Functionality💬
