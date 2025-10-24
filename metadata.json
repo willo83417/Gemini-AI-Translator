@@ -1,0 +1,8 @@
+{
+  "name": "Gemini AI Translator_offline",
+  "description": "A sleek, modern translation application powered by Google's Gemini API. It provides fast and accurate text translations between various languages with a clean, mobile-first user interface.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
