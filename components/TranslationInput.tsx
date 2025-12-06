@@ -23,7 +23,7 @@ interface TranslationInputProps {
     recordingCountdown: number | null;
 }
 
-const MAX_CHARS = 1000;
+const MAX_CHARS = 2500;
 
 const TranslationInput: React.FC<TranslationInputProps> = ({
     inputText,

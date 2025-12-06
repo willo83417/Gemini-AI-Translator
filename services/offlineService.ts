@@ -3,30 +3,48 @@ import { downloadManager } from './downloadManager';
 
 let llmInference: LlmInference | null = null;
 let currentModelIdentifier: string | null = null;
-let initializationPromise: Promise<void> | null = null;
 
-export const initializeOfflineModel = (modelSource: string) => {
-    const modelIdentifier = modelSource;
-    
-    if (llmInference && currentModelIdentifier === modelIdentifier) {
-        return Promise.resolve();
-    }
-    
-    if (initializationPromise) {
-        return initializationPromise;
-    }
+// A promise chain to serialize all model-related operations (init, unload).
+// This prevents race conditions, like trying to unload a model while it's initializing.
+let modelTaskQueue: Promise<any> = Promise.resolve();
 
-    const init = async () => {
+interface LlmInferenceOptions {
+    maxTokens?: number;
+    topK?: number;
+    temperature?: number;
+    randomSeed?: number;
+    supportAudio?: boolean;
+    maxNumImages?: number;
+}
+
+const runExclusive = <T>(task: () => Promise<T>): Promise<T> => {
+    // Chain the new task to the end of the queue.
+    // The `.then(task, task)` ensures the next task runs even if the previous one fails.
+    modelTaskQueue = modelTaskQueue.then(task, task);
+    return modelTaskQueue;
+};
+
+
+export const initializeOfflineModel = (modelSource: string, options: LlmInferenceOptions = {}) => {
+    return runExclusive(async () => {
+        const newModelIdentifier = `${modelSource}-${JSON.stringify(options)}`;
+
+        // If the exact same model with the same config is already loaded, do nothing.
+        if (llmInference && currentModelIdentifier === newModelIdentifier) {
+            console.log(`Model ${newModelIdentifier} is already initialized.`);
+            return;
+        }
+
         // If a different model is loaded, unload it first to free up memory.
         if (llmInference) {
             await llmInference.close();
             llmInference = null;
             currentModelIdentifier = null;
-            console.log('Previous offline model unloaded to switch models.');
+            console.log('Previous offline model unloaded to switch models or apply new settings.');
         }
 
         try {
-            console.log(`Initializing offline model: ${modelIdentifier}`);
+            console.log(`Initializing offline model: ${newModelIdentifier}`);
 
             if (!('gpu' in navigator)) {
               console.warn('WebGPU is not supported in this browser. Falling back to CPU.');
@@ -36,7 +54,7 @@ export const initializeOfflineModel = (modelSource: string) => {
             const modelBlob = await downloadManager.getModelAsBlob(modelSource);
 
             if (!modelBlob) {
-                throw new Error(`Model data for ${modelIdentifier} not found locally.`);
+                throw new Error(`Model data for ${modelSource} not found locally.`);
             }
             const modelUrl = URL.createObjectURL(modelBlob);
             
@@ -45,49 +63,54 @@ export const initializeOfflineModel = (modelSource: string) => {
               "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm"
             );
 
+            const { 
+                maxTokens = 4096, 
+                topK = 40, 
+                temperature = 0.3, 
+                randomSeed = 101,
+                supportAudio = false,
+                maxNumImages = 1
+            } = options;
+
             // Create the LlmInference instance using the correct `createFromOptions` method.
             llmInference = await LlmInference.createFromOptions(filesetResolver, {
                 baseOptions: {
                     modelAssetPath: modelUrl,
-                    // FIX: The 'Delegate' property should be 'delegate' and the value for WebGPU is the string 'GPU'.
                     delegate: 'GPU',
                 },
-                  maxTokens: 1500,
-                  topK: 40,
-                  temperature: 0.3, 
-                  randomSeed: 101,
-                  supportAudio: true, // Enable audio input
-                  maxNumImages: 1, // Enable vision support
+                maxTokens,
+                topK,
+                temperature, 
+                randomSeed,
+                supportAudio,
+                maxNumImages,
             });
             
-            currentModelIdentifier = modelIdentifier;
-            console.log(`Offline model ${modelIdentifier} initialized successfully.`);
+            currentModelIdentifier = newModelIdentifier;
+            console.log(`Offline model ${newModelIdentifier} initialized successfully.`);
             URL.revokeObjectURL(modelUrl);
 
         } catch (error) {
             console.error('Failed to initialize offline model:', error);
             llmInference = null;
             currentModelIdentifier = null;
+            // Re-throw to allow the UI to handle the error
             throw error;
-        } finally {
-            initializationPromise = null;
         }
-    };
-    
-    initializationPromise = init();
-    return initializationPromise;
+    });
 };
 
 export const unloadOfflineModel = async () => {
-    if (llmInference) {
-        await llmInference.close();
-        llmInference = null;
-        currentModelIdentifier = null;
-        console.log('Offline model unloaded from memory.');
-    }
-    if (initializationPromise) {
-        initializationPromise = null;
-    }
+    return runExclusive(async () => {
+        if (llmInference) {
+            await llmInference.close();
+            llmInference = null;
+            currentModelIdentifier = null;
+            console.log('Offline model unloaded from memory.');
+        } else {
+            console.log('No offline model was loaded, unload is not needed.');
+        }
+    });
 };
 
 const _performStreamTranslation = (
@@ -115,6 +138,7 @@ const _performStreamTranslation = (
             const streamCallback = (partialResult: string, done: boolean) => {
                 if (signal.aborted) {
                     // The event listener will handle the rejection.
+                    // It's important not to proceed further.
                     return;
                 }
                 fullText += partialResult;
@@ -209,7 +233,6 @@ export const extractTextFromImageOffline = async (
     try {
         const response = await llmInference.generateResponse([
             `<start_of_turn>user\n${prompt}\n`,
-            // FIX: The MediaPipe LlmInference API for images does not expect a mimeType property.
             { imageSource: imageUrl },
             `<end_of_turn>\n<start_of_turn>model\n`,
         ]);
@@ -228,17 +251,14 @@ export const transcribeAudioOffline = async (
         throw new Error('Offline model is not initialized or does not support audio.');
     }
 
-    // A more direct and specific prompt to reduce model hallucination.
     const languageClause = sourceLang === 'Auto Detect' 
         ? 'Auto-detect the language.' 
         : `The language is ${sourceLang}.`;
 	const prompt = `Transcribe the following audio. ${languageClause}  Return only the transcribed text.`;
     try {
-        // The LlmInference API takes a URL string directly for audio files.
         const response = await llmInference.generateResponse([
 
 			`<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`,
-            // FIX: The MediaPipe LlmInference API for audio does not expect a mimeType property.
             { audioSource: audioUrl }
         ]);
 		console.log(response.trim());

@@ -21,6 +21,12 @@ interface SettingsModalProps {
         offlineTtsRate: number,
         offlineTtsPitch: number,
         isTwoStepJpCnEnabled: boolean,
+        offlineMaxTokens: number,
+        offlineTopK: number,
+        offlineTemperature: number,
+        offlineRandomSeed: number,
+        offlineSupportAudio: boolean,
+        offlineMaxNumImages: number
     ) => void;
     currentApiKey: string;
     currentModelName: string;
@@ -42,6 +48,12 @@ interface SettingsModalProps {
     currentOfflineTtsVoiceURI: string;
     currentOfflineTtsRate: number;
     currentOfflineTtsPitch: number;
+    currentOfflineMaxTokens: number;
+    currentOfflineTopK: number;
+    currentOfflineTemperature: number;
+    currentOfflineRandomSeed: number;
+    currentOfflineSupportAudio: boolean;
+    currentOfflineMaxNumImages: number;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
@@ -68,6 +80,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     currentOfflineTtsVoiceURI,
     currentOfflineTtsRate,
     currentOfflineTtsPitch,
+    currentOfflineMaxTokens,
+    currentOfflineTopK,
+    currentOfflineTemperature,
+    currentOfflineRandomSeed,
+    currentOfflineSupportAudio,
+    currentOfflineMaxNumImages,
 }) => {
     const { t, i18n } = useTranslation();
     const [activeTab, setActiveTab] = useState('online');
@@ -87,6 +105,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [offlineTtsPitch, setOfflineTtsPitch] = useState(currentOfflineTtsPitch);
     const [filteredVoices, setFilteredVoices] = useState<SpeechSynthesisVoice[]>([]);
 
+    // Offline Model Params State
+    const [offlineMaxTokens, setOfflineMaxTokens] = useState(currentOfflineMaxTokens);
+    const [offlineTopK, setOfflineTopK] = useState(currentOfflineTopK);
+    const [offlineTemperature, setOfflineTemperature] = useState(currentOfflineTemperature);
+    const [offlineRandomSeed, setOfflineRandomSeed] = useState(currentOfflineRandomSeed);
+    const [offlineSupportAudio, setOfflineSupportAudio] = useState(currentOfflineSupportAudio);
+    const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(currentOfflineMaxNumImages);
+
     useEffect(() => {
         if (isOpen) {
             setApiKey(currentApiKey);
@@ -101,8 +127,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             setOfflineTtsVoiceURI(currentOfflineTtsVoiceURI);
             setOfflineTtsRate(currentOfflineTtsRate);
             setOfflineTtsPitch(currentOfflineTtsPitch);
+            setOfflineMaxTokens(currentOfflineMaxTokens);
+            setOfflineTopK(currentOfflineTopK);
+            setOfflineTemperature(currentOfflineTemperature);
+            setOfflineRandomSeed(currentOfflineRandomSeed);
+            setOfflineSupportAudio(currentOfflineSupportAudio);
+            setOfflineMaxNumImages(currentOfflineMaxNumImages);
         }
-    }, [isOpen, currentApiKey, currentModelName, currentOnlineProvider, currentOpenaiApiUrl, currentHuggingFaceApiKey, currentOfflineModelName, currentIsOfflineModeEnabled, currentIsTwoStepJpCnEnabled, currentIsOfflineTtsEnabled, currentOfflineTtsVoiceURI, currentOfflineTtsRate, currentOfflineTtsPitch]);
+    }, [isOpen, currentApiKey, currentModelName, currentOnlineProvider, currentOpenaiApiUrl, currentHuggingFaceApiKey, currentOfflineModelName, currentIsOfflineModeEnabled, currentIsTwoStepJpCnEnabled, currentIsOfflineTtsEnabled, currentOfflineTtsVoiceURI, currentOfflineTtsRate, currentOfflineTtsPitch, currentOfflineMaxTokens, currentOfflineTopK, currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, currentOfflineMaxNumImages]);
     
     useEffect(() => {
         if (isOpen && voices.length > 0 && targetLang) {
@@ -120,7 +152,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const handleSave = () => {
         onSave(
             apiKey, modelName, huggingFaceApiKey, offlineModelName, isOfflineEnabled, onlineProvider, openaiApiUrl,
-            isOfflineTtsEnabled, offlineTtsVoiceURI, offlineTtsRate, offlineTtsPitch, isTwoStepJpCnEnabled
+            isOfflineTtsEnabled, offlineTtsVoiceURI, offlineTtsRate, offlineTtsPitch, isTwoStepJpCnEnabled,
+            offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages
         );
         onClose();
     };
@@ -138,8 +171,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setOfflineTtsVoiceURI('');
         setOfflineTtsRate(1);
         setOfflineTtsPitch(1);
-        OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value))
-        onSave('', 'gemini-2.5-flash', '', '', false, 'gemini', '', false, '', 1, 1, false);
+        setOfflineMaxTokens(4096);
+        setOfflineTopK(40);
+        setOfflineTemperature(0.3);
+        setOfflineRandomSeed(101);
+        setOfflineSupportAudio(false);
+        setOfflineMaxNumImages(1);
+        OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
+        onSave('', 'gemini-2.5-flash', '', '', false, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 101, false, 1);
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,12 +223,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
         );
 
-        const statusKey = isInitializingThisModel ? 'initializing' : progress.status;
-        // FIX: Removed a problematic type cast that was causing an "implicit conversion of a 'symbol' to a 'string'" error.
-        // The `progress.status` is already a string literal type that matches the translation keys.
-        const statusText = isInitializingThisModel
-            ? t('settings.statusInitializing')
-            : t(`common.status.${progress.status}`);
+        const isProcessing = isInitializingThisModel || progress.status === 'consolidating';
+        const statusKey = isProcessing ? progress.status : progress.status;
+        const statusText = t(`common.status.${statusKey}`);
 
         return (
              <div className="flex flex-col space-y-2 p-3 border border-gray-200 rounded-lg bg-gray-50">
@@ -202,7 +238,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={model.value}
                             checked={offlineModelName === model.value}
                             onChange={handleDownloadedModelSelect}
-                            disabled={progress.status !== 'completed' || isInitializingThisModel}
+                            disabled={progress.status !== 'completed' || isProcessing}
                             className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 disabled:cursor-not-allowed"
                         />
                         <label htmlFor={`model-${model.value}`} className="ml-2 text-sm font-medium text-gray-800">
@@ -214,21 +250,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                          {progress.status === 'downloading' && <ActionButton onClick={() => onPauseDownload(model.value)} text={t('settings.pause')} className="bg-yellow-500 hover:bg-yellow-600" />}
                          {progress.status === 'paused' && <ActionButton onClick={() => onResumeDownload(model.value, model.url)} text={t('settings.resume')} disabled={!huggingFaceApiKey}/>}
                          {progress.status === 'error' && <ActionButton onClick={() => onResumeDownload(model.value, model.url)} text={t('settings.retry')} disabled={!huggingFaceApiKey}/>}
-                         {(progress.status !== 'not_started') && (
+                         {(progress.status !== 'not_started' && progress.status !== 'downloading' && progress.status !== 'consolidating') && (
                             <button onClick={() => onDeleteModel(model.value)} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full" aria-label={t('settings.deleteModelAriaLabel', { modelName: model.name })}>
                                 <TrashIcon className="w-4 h-4" />
                             </button>
                         )}
                     </div>
                 </div>
-                 {(progress.status !== 'not_started' || isInitializingThisModel) && (
+                 {(progress.status !== 'not_started' || isProcessing) && (
                      <div>
                          <div className="w-full bg-gray-200 rounded-full h-2 relative overflow-hidden">
-                             <div className={`h-2 rounded-full ${isInitializingThisModel ? 'bg-green-400 w-full animate-pulse' : 'bg-blue-500'}`} style={{ width: `${progress.percent}%` }}></div>
+                             <div className={`h-2 rounded-full ${isProcessing ? 'bg-green-400 w-full animate-pulse' : 'bg-blue-500'}`} style={{ width: `${progress.percent}%` }}></div>
                          </div>
                          <div className="text-xs text-gray-500 mt-1 flex justify-between">
                              <span>{statusText}</span>
-                             {progress.status !== 'completed' && !isInitializingThisModel && <span>{formatBytes(progress.downloaded)} / {formatBytes(progress.total)} ({Math.round(progress.percent)}%)</span>}
+                             {progress.status === 'downloading' && !isProcessing && <span>{formatBytes(progress.downloaded)} / {formatBytes(progress.total)} ({Math.round(progress.percent)}%)</span>}
                          </div>
                      </div>
                  )}
@@ -241,7 +277,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         <div>
             <label htmlFor={id} className="flex justify-between items-center text-sm font-medium text-gray-700 mb-1">
                 <span>{label}</span>
-                <span className="text-gray-500 font-normal">{value.toFixed(2)}</span>
+                <span className="text-gray-500 font-normal">{value}</span>
             </label>
             <input
                 type="range"
@@ -308,6 +344,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                        <TabButton tabName="online" label={t('settings.tabOnline')} />
                        <TabButton tabName="offline" label={t('settings.tabOffline')} />
                        <TabButton tabName="tts" label={t('settings.tabTts')} />
+                       <TabButton tabName="offline-params" label={t('settings.tabOfflineParams')} />
                     </nav>
                 </div>
 
@@ -445,6 +482,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                              <Slider id="rate-slider" label={t('settings.rateLabel')} value={offlineTtsRate} onChange={e => setOfflineTtsRate(parseFloat(e.target.value))} min={0.5} max={2} step={0.1} />
                              <Slider id="pitch-slider" label={t('settings.pitchLabel')} value={offlineTtsPitch} onChange={e => setOfflineTtsPitch(parseFloat(e.target.value))} min={0} max={2} step={0.1} />
+                        </div>
+                    )}
+                     {activeTab === 'offline-params' && (
+                        <div role="tabpanel" id="offline-params-settings" aria-labelledby="offline-params-tab" className="space-y-6">
+                            <p className="text-sm text-gray-500">{t('settings.offlineParamsDescription')}</p>
+                            
+                            <Slider id="max-tokens-slider" label={t('settings.maxTokensLabel')} value={offlineMaxTokens} onChange={e => setOfflineMaxTokens(parseInt(e.target.value, 10))} min={256} max={8192} step={256} />
+
+                            <Slider id="top-k-slider" label={t('settings.topKLabel')} value={offlineTopK} onChange={e => setOfflineTopK(parseInt(e.target.value, 10))} min={1} max={100} step={1} />
+
+                            <Slider id="temperature-slider" label={t('settings.temperatureLabel')} value={offlineTemperature} onChange={e => setOfflineTemperature(parseFloat(e.target.value))} min={0} max={1} step={0.05} />
+
+                            <div>
+                                <label htmlFor="random-seed" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.randomSeedLabel')}</label>
+                                <input type="number" id="random-seed" value={offlineRandomSeed} onChange={e => setOfflineRandomSeed(parseInt(e.target.value, 10))} className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+                            </div>
+
+                            <ToggleSwitch id="support-audio-toggle" isEnabled={offlineSupportAudio} setIsEnabled={setOfflineSupportAudio} title={t('settings.supportAudioLabel')} description={t('settings.supportAudioDescription')} />
+
+                            <ToggleSwitch id="max-num-images-toggle" isEnabled={offlineMaxNumImages === 1} setIsEnabled={(enabled) => setOfflineMaxNumImages(enabled ? 1 : 0)} title={t('settings.maxNumImagesLabel')} description={t('settings.maxNumImagesDescription')} />
                         </div>
                     )}
                 </div>

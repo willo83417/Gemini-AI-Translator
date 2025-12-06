@@ -7,7 +7,6 @@ import SettingsModal from './components/SettingsModal';
 import HistoryModal from './components/HistoryModal';
 import { translateTextStream as translateTextGeminiStream, translateImage as translateImageGemini } from './services/geminiService';
 import { translateTextStream as translateTextOpenAIStream, translateImage as translateImageOpenAI } from './services/openaiService';
-import { initializeOfflineModel, unloadOfflineModel, translateOfflineStream, transcribeAudioOffline, extractTextFromImageOffline } from './services/offlineService';
 import { downloadManager, type DownloadProgress } from './services/downloadManager';
 import type { Language, TranslationHistoryItem } from './types';
 import { LANGUAGES, OFFLINE_MODELS } from './constants';
@@ -139,6 +138,14 @@ const App: React.FC = () => {
     const [isOfflineModelInitializing, setIsOfflineModelInitializing] = useState(false);
     const [isOfflineModelInitialized, setIsOfflineModelInitialized] = useState(false);
 
+    // Offline Model Parameters
+    const [offlineMaxTokens, setOfflineMaxTokens] = useState(4096);
+    const [offlineTopK, setOfflineTopK] = useState(40);
+    const [offlineTemperature, setOfflineTemperature] = useState(0.3);
+    const [offlineRandomSeed, setOfflineRandomSeed] = useState(101);
+    const [offlineSupportAudio, setOfflineSupportAudio] = useState(false);
+    const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(1);
+
     // Offline recording countdown state
     const [recordingCountdown, setRecordingCountdown] = useState<number | null>(null);
 
@@ -149,6 +156,9 @@ const App: React.FC = () => {
     }
     const [notification, setNotification] = useState<Notification | null>(null);
     const notificationTimerRef = useRef<number | null>(null);
+
+    const workerRef = useRef<Worker | null>(null);
+    const messageHandlerRef = useRef((event: MessageEvent) => {});
 
     const showNotification = useCallback((message: string, type: NotificationType = 'error') => {
         if (notificationTimerRef.current) {
@@ -170,8 +180,102 @@ const App: React.FC = () => {
     const audioProcessingContextRef = useRef<AudioContext | null>(null);
     // Ref for the offline recording countdown timer
     const countdownTimerRef = useRef<number | null>(null);
-    // Ref for the translation cancellation controller
+    // Ref for the online translation cancellation controller
     const translationAbortControllerRef = useRef<AbortController | null>(null);
+
+
+    useEffect(() => {
+        messageHandlerRef.current = (event: MessageEvent) => {
+            const { type, payload } = event.data;
+    
+            switch(type) {
+                case 'init_done':
+                    setIsOfflineModelInitialized(true);
+                    showNotification(t('notifications.offlineModelInitSuccess', { modelIdentifier: payload.modelIdentifier }), 'success');
+                    setIsOfflineModelInitializing(false);
+                    break;
+                case 'init_error':
+                    setIsOfflineModelInitialized(false);
+                    showNotification(payload.error || t('notifications.offlineModelInitFailed'), 'error');
+                    console.error('Offline model init failed via worker:', payload.error);
+                    setIsOfflineModelInitializing(false);
+                    break;
+                case 'unload_done':
+                    setIsOfflineModelInitialized(false);
+                    setIsOfflineModelInitializing(false);
+                    break;
+                case 'translation_chunk':
+                    setTranslatedText(prev => prev + payload.chunk);
+                    break;
+                case 'translation_done': {
+                    const newHistoryItem: TranslationHistoryItem = {
+                        id: Date.now(), inputText, translatedText: payload.result, sourceLang, targetLang,
+                    };
+                    setHistory(prevHistory => {
+                        const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
+                        localStorage.setItem('translation-history', JSON.stringify(updatedHistory));
+                        return updatedHistory;
+                    });
+                    setIsLoading(false);
+                    break;
+                }
+                case 'translation_error':
+                    showNotification(t('notifications.translationFailed', { errorMessage: payload.error }), 'error');
+                    setIsLoading(false);
+                    break;
+                case 'translation_cancelled':
+                    setIsLoading(false);
+                    break;
+                case 'extract_text_done':
+                    setInputText(payload.text);
+                    setTranslatedText('');
+                    if (!payload.text.trim()) {
+                        showNotification(t('notifications.noTextInImage'), "error");
+                    }
+                    setIsLoading(false);
+                    break;
+                case 'extract_text_error':
+                    showNotification(t('notifications.imageProcessingFailed', { errorMessage: payload.error }), 'error');
+                    setInputText('');
+                    setIsLoading(false);
+                    break;
+                case 'transcribe_done':
+                    setInputText(payload.text);
+                    setIsLoading(false);
+                    if (payload.audioUrl) URL.revokeObjectURL(payload.audioUrl);
+                    break;
+                case 'transcribe_error':
+                    showNotification(t('notifications.transcriptionFailed', { errorMessage: payload.error }), 'error');
+                    setInputText('');
+                    setIsLoading(false);
+                    if (payload.audioUrl) URL.revokeObjectURL(payload.audioUrl);
+                    break;
+            }
+        };
+    }, [t, showNotification, inputText, sourceLang, targetLang]);
+    
+    /*useEffect(() => {
+        const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url), {
+          type: 'module',
+        });
+        workerRef.current = worker;
+        
+        const onMessage = (event: MessageEvent) => messageHandlerRef.current(event);
+        worker.addEventListener('message', onMessage);
+    
+        worker.onerror = (error) => {
+            console.error('Worker error:', error);
+            showNotification(`A critical worker error occurred: ${error.message}`, 'error');
+            setIsOfflineModelInitializing(false);
+            setIsLoading(false);
+        };
+    
+        return () => {
+            worker.removeEventListener('message', onMessage);
+            worker.terminate();
+            workerRef.current = null;
+        };
+    }, [showNotification]);*/
 
 
     useEffect(() => {
@@ -237,6 +341,24 @@ const App: React.FC = () => {
         const savedTtsPitch = localStorage.getItem('tts-pitch');
         if (savedTtsPitch) setOfflineTtsPitch(JSON.parse(savedTtsPitch));
 
+        const savedMaxTokens = localStorage.getItem('offline-max-tokens');
+        if (savedMaxTokens) setOfflineMaxTokens(JSON.parse(savedMaxTokens));
+
+        const savedTopK = localStorage.getItem('offline-top-k');
+        if (savedTopK) setOfflineTopK(JSON.parse(savedTopK));
+
+        const savedTemp = localStorage.getItem('offline-temperature');
+        if (savedTemp) setOfflineTemperature(JSON.parse(savedTemp));
+        
+        const savedSeed = localStorage.getItem('offline-random-seed');
+        if (savedSeed) setOfflineRandomSeed(JSON.parse(savedSeed));
+
+        const savedAudio = localStorage.getItem('offline-support-audio');
+        if (savedAudio) setOfflineSupportAudio(JSON.parse(savedAudio));
+
+        const savedImages = localStorage.getItem('offline-max-num-images');
+        if (savedImages) setOfflineMaxNumImages(JSON.parse(savedImages));
+
         try {
             const savedHistory = localStorage.getItem('translation-history');
             if (savedHistory) setHistory(JSON.parse(savedHistory));
@@ -256,38 +378,59 @@ const App: React.FC = () => {
 
     useEffect(() => {
         const modelToLoad = isModelDownloaded ? offlineModelName : null;
-        const modelIdentifier = offlineModelName;
-
-        if (modelToLoad && !isOfflineModelInitialized && !isOfflineModelInitializing) {
-            const initModel = async () => {
-                setIsOfflineModelInitializing(true);
-                try {
-                    await initializeOfflineModel(modelToLoad);
-                    setIsOfflineModelInitialized(true);
-                    showNotification(t('notifications.offlineModelInitSuccess', { modelIdentifier }), 'success');
-                } catch (err) {
-                    const message = err instanceof Error ? err.message : t('notifications.offlineModelInitFailed');
-                    showNotification(message, 'error');
-                    console.error('Offline model init failed', err);
-                    setIsOfflineModelInitialized(false);
-                } finally {
-                    setIsOfflineModelInitializing(false);
-                }
-            };
-            initModel();
-        }
-
+    
         if (!isOfflineModeEnabled || !modelToLoad) {
             if (isOfflineModelInitialized || isOfflineModelInitializing) {
-                const unload = async () => {
-                    await unloadOfflineModel();
-                    setIsOfflineModelInitialized(false);
-                    setIsOfflineModelInitializing(false);
-                };
-                unload();
+                workerRef.current?.postMessage({ type: 'unload' });
             }
+            return;
         }
-    }, [isModelDownloaded, offlineModelName, isOfflineModeEnabled, isOfflineModelInitialized, isOfflineModelInitializing, showNotification, t]);
+
+        const initModel = async () => {
+            setIsOfflineModelInitializing(true);
+            setIsOfflineModelInitialized(false);
+            try {
+                const modelBlob = await downloadManager.getModelAsBlob(modelToLoad);
+                if (!modelBlob) {
+                    throw new Error(`Model blob for ${modelToLoad} not found.`);
+                }
+                
+                const options = {
+                    maxTokens: offlineMaxTokens,
+                    topK: offlineTopK,
+                    temperature: offlineTemperature,
+                    randomSeed: offlineRandomSeed,
+                    supportAudio: offlineSupportAudio,
+                    maxNumImages: offlineMaxNumImages,
+                };
+                
+                // Pass the File/Blob object directly to the worker.
+                // This avoids creating a large ArrayBuffer in the main thread,
+                // which can exceed the 2GB limit and cause errors.
+                workerRef.current?.postMessage({
+                    type: 'init',
+                    payload: { modelBlob, modelSource: modelToLoad, options }
+                });
+
+            } catch (err) {
+                const message = err instanceof Error ? err.message : t('notifications.offlineModelInitFailed');
+                showNotification(message, 'error');
+                console.error('Offline model init failed (main thread):', err);
+                setIsOfflineModelInitialized(false);
+                setIsOfflineModelInitializing(false);
+            }
+        };
+        
+        if (workerRef.current) {
+            initModel();
+        }
+    
+    }, [
+        isModelDownloaded, offlineModelName, isOfflineModeEnabled, 
+        showNotification, t,
+        offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed,
+        offlineSupportAudio, offlineMaxNumImages
+    ]);
 
 
     const performTranslate = useCallback(async (textToTranslate: string) => {
@@ -295,8 +438,7 @@ const App: React.FC = () => {
             setTranslatedText('');
             return;
         }
-
-        // Cancel any previous, ongoing translation before starting a new one.
+    
         if (translationAbortControllerRef.current) {
             translationAbortControllerRef.current.abort();
         }
@@ -304,13 +446,7 @@ const App: React.FC = () => {
         translationAbortControllerRef.current = controller;
     
         setIsLoading(true);
-        setTranslatedText(''); // Clear previous translation before streaming
-    
-        let finalResult = '';
-        const onChunk = (chunk: string) => {
-            finalResult += chunk;
-            setTranslatedText(prev => prev + chunk);
-        };
+        setTranslatedText('');
     
         try {
             if (isOfflineModeEnabled) {
@@ -318,9 +454,23 @@ const App: React.FC = () => {
                 if (isOfflineModelInitializing) throw new Error('Offline model is still initializing.');
                 if (!isOfflineModelReady) throw new Error('Selected offline model is not ready.');
                 
-                finalResult = await translateOfflineStream(textToTranslate, t(sourceLang.name), t(targetLang.name), isTwoStepJpCn, onChunk, controller.signal);
+                workerRef.current?.postMessage({
+                    type: 'translate',
+                    payload: {
+                        text: textToTranslate,
+                        sourceLang: t(sourceLang.name),
+                        targetLang: t(targetLang.name),
+                        isTwoStepEnabled: isTwoStepJpCn,
+                    }
+                });
             } else { // Online mode
                 if (!isOnline) throw new Error("You are offline. Enable offline mode or connect to the internet.");
+    
+                let finalResult = '';
+                const onChunk = (chunk: string) => {
+                    finalResult += chunk;
+                    setTranslatedText(prev => prev + chunk);
+                };
     
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
@@ -330,23 +480,22 @@ const App: React.FC = () => {
                     if (!apiKey) throw new Error("Gemini API Key is not set. Please add it in the settings.");
                     finalResult = await translateTextGeminiStream(textToTranslate, t(sourceLang.name), t(targetLang.name), apiKey, modelName, onChunk, controller.signal);
                 }
+    
+                const newHistoryItem: TranslationHistoryItem = {
+                    id: Date.now(), inputText: textToTranslate, translatedText: finalResult, sourceLang, targetLang,
+                };
+                setHistory(prevHistory => {
+                    const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
+                    localStorage.setItem('translation-history', JSON.stringify(updatedHistory));
+                    return updatedHistory;
+                });
+                setIsLoading(false);
             }
     
-            // After stream is complete, save the final result to history
-            const newHistoryItem: TranslationHistoryItem = {
-                id: Date.now(), inputText: textToTranslate, translatedText: finalResult, sourceLang, targetLang,
-            };
-            setHistory(prevHistory => {
-                const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
-                localStorage.setItem('translation-history', JSON.stringify(updatedHistory));
-                return updatedHistory;
-            });
-    
         } catch (err) {
-            // Do not show an error notification if the translation was cancelled by the user.
             if (err instanceof DOMException && err.name === 'AbortError') {
                 console.log("Translation cancelled by user.");
-                setTranslatedText(finalResult); // Show partial result
+                setIsLoading(false);
                 return;
             }
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
@@ -355,9 +504,9 @@ const App: React.FC = () => {
                 setIsSettingsOpen(true);
             }
             console.error(err);
-        } finally {
             setIsLoading(false);
-            if (translationAbortControllerRef.current === controller) {
+        } finally {
+            if (!isOfflineModeEnabled && translationAbortControllerRef.current === controller) {
                 translationAbortControllerRef.current = null;
             }
         }
@@ -368,10 +517,12 @@ const App: React.FC = () => {
     }, [inputText, performTranslate]);
 
     const handleCancelTranslation = useCallback(() => {
-        if (translationAbortControllerRef.current) {
-            translationAbortControllerRef.current.abort();
+        if (isOfflineModeEnabled) {
+            workerRef.current?.postMessage({ type: 'cancel_translation' });
+        } else {
+            translationAbortControllerRef.current?.abort();
         }
-    }, []);
+    }, [isOfflineModeEnabled]);
 
     const handleSwapLanguages = useCallback(() => {
         if (sourceLang.code === 'auto') return;
@@ -586,7 +737,6 @@ const App: React.FC = () => {
                     const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
                     audioChunksRef.current = [];
 
-                    let wavUrl: string | null = null;
                     let postProcessingAudioContext: AudioContext | null = null;
 
                     try {
@@ -608,23 +758,23 @@ const App: React.FC = () => {
                         }
                         
                         const wavBlob = audioBufferToWav(finalAudioBuffer);
-                        wavUrl = URL.createObjectURL(wavBlob);
+                        const wavUrl = URL.createObjectURL(wavBlob);
 
-                        const result = await transcribeAudioOffline(wavUrl, t(sourceLang.name));
-                        setInputText(result);
+                        workerRef.current?.postMessage({
+                            type: 'transcribe',
+                            payload: { audioUrl: wavUrl, sourceLang: t(sourceLang.name) }
+                        });
+                        // URL will be revoked in the worker message handler.
 
                     } catch (err) {
                          const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while processing audio.';
                          showNotification(t('notifications.transcriptionFailed', { errorMessage }), 'error');
                          setInputText('');
+                         setIsLoading(false);
                     } finally {
-                        if (wavUrl) {
-                            URL.revokeObjectURL(wavUrl);
-                        }
                         if (postProcessingAudioContext && postProcessingAudioContext.state !== 'closed') {
                             postProcessingAudioContext.close();
                         }
-                        setIsLoading(false);
                     }
                 };
                 
@@ -739,7 +889,6 @@ const App: React.FC = () => {
                     }
                     const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
                     audioChunksRef.current = [];
-                    let wavUrl: string | null = null;
                     let postProcessingAudioContext: AudioContext | null = null;
 
                     try {
@@ -758,17 +907,35 @@ const App: React.FC = () => {
                             finalAudioBuffer = await offlineContext.startRendering();
                         }
                         const wavBlob = audioBufferToWav(finalAudioBuffer);
-                        wavUrl = URL.createObjectURL(wavBlob);
+                        const wavUrl = URL.createObjectURL(wavBlob);
 
-                        const transcript = await transcribeAudioOffline(wavUrl, t(sourceLang.name));
-                        setInputText(transcript);
-                        performTranslate(transcript);
+                        workerRef.current?.postMessage({
+                            type: 'transcribe',
+                            payload: { audioUrl: wavUrl, sourceLang: t(sourceLang.name) }
+                        });
+                        // After getting the text, immediately translate it.
+                        // This requires chaining messages or waiting.
+                        // For now, let's keep it simple: transcribe, then user clicks translate.
+                        // To auto-translate, we need a more complex state machine with the worker.
+                        // The current message handler for 'transcribe_done' could trigger a translate message.
+                        // Let's modify the handler.
+                        // No, let's just performTranslate in the handler.
+                        const originalHandler = messageHandlerRef.current;
+                        messageHandlerRef.current = (event: MessageEvent) => {
+                            if (event.data.type === 'transcribe_done') {
+                                setInputText(event.data.payload.text);
+                                performTranslate(event.data.payload.text);
+                                if (event.data.payload.audioUrl) URL.revokeObjectURL(event.data.payload.audioUrl);
+                                messageHandlerRef.current = originalHandler; // Restore original handler
+                            } else {
+                                originalHandler(event);
+                            }
+                        };
                     } catch (err) {
                         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during speech translation.';
                         showNotification(t('notifications.astFailed', { errorMessage }), 'error');
                         setInputText('');
                     } finally {
-                        if (wavUrl) URL.revokeObjectURL(wavUrl);
                         if (postProcessingAudioContext && postProcessingAudioContext.state !== 'closed') postProcessingAudioContext.close();
                     }
                 };
@@ -819,20 +986,18 @@ const App: React.FC = () => {
         setTranslatedText('');
 
         try {
-            let result: { sourceText: string, translatedText: string };
-
             if (isOfflineModeEnabled) {
                 if (!isOfflineModelReady) throw new Error(t('notifications.offlineImageError'));
                 
-                const extractedText = await extractTextFromImageOffline(imageDataUrl);
-                setInputText(extractedText);
-                setTranslatedText(''); // Clear translation, user must click translate button
-                if (!extractedText.trim()) {
-                    showNotification(t('notifications.noTextInImage'), "error");
-                }
+                workerRef.current?.postMessage({
+                    type: 'extractText',
+                    payload: { imageUrl: imageDataUrl }
+                });
+
             } else { // Online mode
                 if (!isOnline) throw new Error(t('notifications.offlineImageTranslateError'));
                 
+                let result: { sourceText: string, translatedText: string };
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set. Please add it in the settings.");
@@ -858,12 +1023,12 @@ const App: React.FC = () => {
                     localStorage.setItem('translation-history', JSON.stringify(updatedHistory));
                     return updatedHistory;
                 });
+                setIsLoading(false);
             }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
             showNotification(t('notifications.imageProcessingFailed', { errorMessage }), 'error');
             setInputText(''); // Clear processing message on error
-        } finally {
             setIsLoading(false);
         }
     }, [isOfflineModeEnabled, isOfflineModelReady, isOnline, apiKey, modelName, targetLang, sourceLang, showNotification, onlineProvider, openaiApiUrl, t]);
@@ -881,6 +1046,12 @@ const App: React.FC = () => {
         newTtsRate: number,
         newTtsPitch: number,
         newIsTwoStepJpCn: boolean,
+        newOfflineMaxTokens: number,
+        newOfflineTopK: number,
+        newOfflineTemperature: number,
+        newOfflineRandomSeed: number,
+        newOfflineSupportAudio: boolean,
+        newOfflineMaxNumImages: number
     ) => {
         setApiKey(newApiKey);
         setModelName(newModelName);
@@ -894,6 +1065,12 @@ const App: React.FC = () => {
         setOfflineTtsVoiceURI(newTtsVoiceURI);
         setOfflineTtsRate(newTtsRate);
         setOfflineTtsPitch(newTtsPitch);
+        setOfflineMaxTokens(newOfflineMaxTokens);
+        setOfflineTopK(newOfflineTopK);
+        setOfflineTemperature(newOfflineTemperature);
+        setOfflineRandomSeed(newOfflineRandomSeed);
+        setOfflineSupportAudio(newOfflineSupportAudio);
+        setOfflineMaxNumImages(newOfflineMaxNumImages);
         
         localStorage.setItem('api-key', newApiKey);
         localStorage.setItem('model-name', newModelName);
@@ -907,6 +1084,12 @@ const App: React.FC = () => {
         localStorage.setItem('tts-voice-uri', newTtsVoiceURI);
         localStorage.setItem('tts-rate', JSON.stringify(newTtsRate));
         localStorage.setItem('tts-pitch', JSON.stringify(newTtsPitch));
+        localStorage.setItem('offline-max-tokens', JSON.stringify(newOfflineMaxTokens));
+        localStorage.setItem('offline-top-k', JSON.stringify(newOfflineTopK));
+        localStorage.setItem('offline-temperature', JSON.stringify(newOfflineTemperature));
+        localStorage.setItem('offline-random-seed', JSON.stringify(newOfflineRandomSeed));
+        localStorage.setItem('offline-support-audio', JSON.stringify(newOfflineSupportAudio));
+        localStorage.setItem('offline-max-num-images', JSON.stringify(newOfflineMaxNumImages));
     };
 
     const handleSelectHistory = (item: TranslationHistoryItem) => {
@@ -1018,6 +1201,12 @@ const App: React.FC = () => {
                 currentOfflineTtsVoiceURI={offlineTtsVoiceURI}
                 currentOfflineTtsRate={offlineTtsRate}
                 currentOfflineTtsPitch={offlineTtsPitch}
+                currentOfflineMaxTokens={offlineMaxTokens}
+                currentOfflineTopK={offlineTopK}
+                currentOfflineTemperature={offlineTemperature}
+                currentOfflineRandomSeed={offlineRandomSeed}
+                currentOfflineSupportAudio={offlineSupportAudio}
+                currentOfflineMaxNumImages={offlineMaxNumImages}
             />
 
             <HistoryModal

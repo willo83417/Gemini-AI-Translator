@@ -20,12 +20,14 @@ export const OFFLINE_MODELS = [
     { 
         name: 'Gemma-3n-E2B (3.04 GB)', 
         value: 'gemma-3n-E2B-it-int4-Web.litertlm', 
-        url: 'https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4-Web.litertlm'
+        url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-3n-E2B-it-int4-Web.litertlm'
+        //url: 'https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4-Web.litertlm'
     },
     { 
         name: 'Gemma-3n-E4B (4.28 GB)', 
-        value: 'ggemma-3n-E4B-it-int4-Web.litertlm', 
-        url: 'https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm'
+        value: 'gemma-3n-E4B-it-int4-Web.litertlm', 
+        url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm'
+        //url: 'https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm'
     },
         { 
         name: 'Gemma3-4B-IT (2.56 GB)', 

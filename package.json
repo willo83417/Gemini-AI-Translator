@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.23.0",
+    "@google/genai": "^1.30.0",
     "@mediapipe/tasks-genai": "0.10.25",
     "i18next": "^23.12.2",
     "i18next-browser-languagedetector": "^8.0.0",
