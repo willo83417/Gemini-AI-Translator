@@ -1,7 +1,7 @@
 # Gemini AI Translator
 
 This is a modern translation application powered by the Google Gemini API. It provides a clean, mobile-first user interface for fast and accurate text, voice, and image translation between multiple languages, and supports both online and offline modes.  
-🚀[Live Demo](https://willo83417.github.io/Gemini-AI-Translator-offline/ "Gemini AI Translator")  
+🚀[Live Demo](https://willo83417.github.io/Gemini-AI-Translator/)  
 
 ## 📸 Screenshots
 
@@ -130,5 +130,6 @@ The main interface is divided into two blocks, one for input and one for output.
 - **Offline Inference Engine**: MediaPipe (`@mediapipe/tasks-genai`)
 - **Online Translation**: Google Gemini API (`@google/genai`) / OpenAI API
 - **Internationalization**: i18next
+
 
 ## Notes⚠️
