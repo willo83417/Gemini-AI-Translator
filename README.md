@@ -131,5 +131,4 @@ The main interface is divided into two blocks, one for input and one for output.
 - **Online Translation**: Google Gemini API (`@google/genai`) / OpenAI API
 - **Internationalization**: i18next
 
-
 ## Notes⚠️

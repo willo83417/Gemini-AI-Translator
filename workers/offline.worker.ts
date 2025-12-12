@@ -13,7 +13,8 @@ let twoStepState: {
 const initInferenceWorker = () => {
     if (inferenceWorker) return;
     
-    inferenceWorker = new Worker(new URL('/public/worker.js', import.meta.url));
+    //inferenceWorker = new Worker(new URL('/public/worker.js', import.meta.url)); //Development and Testing;開發測試
+	inferenceWorker = new Worker(new URL('./worker.js', import.meta.url));	//Development and Testing & Both yarn build and packaging can be used.; yarn build打包 皆可使用
 
     inferenceWorker.onmessage = (event: MessageEvent) => {
         const { type, payload } = event.data;

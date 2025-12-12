@@ -1,7 +1,8 @@
 // workers/worker.js
 //import { LlmInference, FilesetResolver } from '@mediapipe/tasks-genai';
 self.exports = {};
-importScripts("/public/genai_bundle.js");
+//importScripts("/public/genai_bundle.js"); //Development and Testing;開發測試
+importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用
 const { FilesetResolver, LlmInference } = self.exports;
 
 const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm";
