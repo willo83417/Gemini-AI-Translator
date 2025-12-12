@@ -205,7 +205,7 @@ const App: React.FC = () => {
                     setIsOfflineModelInitializing(false);
                     break;
                 case 'translation_chunk':
-                    setTranslatedText(prev => prev + payload.chunk);
+                    setTranslatedText(prev => prev.length === 0 ? payload.chunk.trimStart() : prev + payload.chunk);
                     break;
                 case 'translation_done': {
                     const newHistoryItem: TranslationHistoryItem = {
@@ -254,7 +254,9 @@ const App: React.FC = () => {
         };
     }, [t, showNotification, inputText, sourceLang, targetLang]);
     
-    /*useEffect(() => {
+        //Do not delete this code, trigger the sandbox security mechanism and temporarily comment it out.
+    //禁止刪除該程式碼，觸發沙盒安全機制暫時註解
+    useEffect(() => {
         const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url), {
           type: 'module',
         });
@@ -275,7 +277,7 @@ const App: React.FC = () => {
             worker.terminate();
             workerRef.current = null;
         };
-    }, [showNotification]);*/
+    }, [showNotification]);
 
 
     useEffect(() => {
@@ -460,6 +462,8 @@ const App: React.FC = () => {
                         text: textToTranslate,
                         sourceLang: t(sourceLang.name),
                         targetLang: t(targetLang.name),
+                        sourceLangCode: sourceLang.code,
+                        targetLangCode: targetLang.code,
                         isTwoStepEnabled: isTwoStepJpCn,
                     }
                 });
@@ -469,7 +473,7 @@ const App: React.FC = () => {
                 let finalResult = '';
                 const onChunk = (chunk: string) => {
                     finalResult += chunk;
-                    setTranslatedText(prev => prev + chunk);
+                    setTranslatedText(prev => prev.length === 0 ? chunk.trimStart() : prev + chunk);
                 };
     
                 if (onlineProvider === 'openai') {

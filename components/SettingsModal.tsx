@@ -246,10 +246,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </label>
                     </div>
                      <div className="flex items-center space-x-2">
-                         {progress.status === 'not_started' && <ActionButton onClick={() => onStartDownload(model.value, model.url)} text={t('settings.download')} disabled={!huggingFaceApiKey} />}
+                         {progress.status === 'not_started' && <ActionButton onClick={() => onStartDownload(model.value, model.url)} text={t('settings.download')} /*disabled={!huggingFaceApiKey}*/ />}
                          {progress.status === 'downloading' && <ActionButton onClick={() => onPauseDownload(model.value)} text={t('settings.pause')} className="bg-yellow-500 hover:bg-yellow-600" />}
-                         {progress.status === 'paused' && <ActionButton onClick={() => onResumeDownload(model.value, model.url)} text={t('settings.resume')} disabled={!huggingFaceApiKey}/>}
-                         {progress.status === 'error' && <ActionButton onClick={() => onResumeDownload(model.value, model.url)} text={t('settings.retry')} disabled={!huggingFaceApiKey}/>}
+                         {progress.status === 'paused' && <ActionButton onClick={() => onResumeDownload(model.value, model.url)} text={t('settings.resume')} /*disabled={!huggingFaceApiKey}*/ />}
+                         {progress.status === 'error' && <ActionButton onClick={() => onResumeDownload(model.value, model.url)} text={t('settings.retry')} /*disabled={!huggingFaceApiKey}*/ />}
                          {(progress.status !== 'not_started' && progress.status !== 'downloading' && progress.status !== 'consolidating') && (
                             <button onClick={() => onDeleteModel(model.value)} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full" aria-label={t('settings.deleteModelAriaLabel', { modelName: model.name })}>
                                 <TrashIcon className="w-4 h-4" />
@@ -409,6 +409,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
                     {activeTab === 'offline' && (
                         <div role="tabpanel" id="offline-settings" aria-labelledby="offline-tab" className="space-y-6">
+                            {/*
                             <div>
                                 <label htmlFor="hf-api-key" className="block text-sm font-medium text-gray-700 mb-1">
                                     {t('settings.hfApiKeyLabel')}
@@ -423,6 +424,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 />
                                  <p className="text-xs text-gray-500 mt-1">{t('settings.hfApiKeyDescription')}</p>
                             </div>
+                            */}
                              <div className="space-y-3">
                                 <label className="block text-sm font-medium text-gray-700">{t('settings.manageModelsLabel')}</label>
                                 {OFFLINE_MODELS.filter(m => m.value).map(model => (

@@ -29,9 +29,4 @@ export const OFFLINE_MODELS = [
         url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm'
         //url: 'https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm'
     },
-        { 
-        name: 'Gemma3-4B-IT (2.56 GB)', 
-        value: 'gemma3-4b-it-int4-web.task', 
-        url: 'https://huggingface.co/litert-community/Gemma3-4B-IT/resolve/main/gemma3-4b-it-int4-web.task'
-    },
 ];

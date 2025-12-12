@@ -78,10 +78,12 @@ class DownloadManager {
     }
 
     private async runOpfsDownload(modelName: string, url: string, hfApiKey: string, onProgress: (progress: DownloadProgress) => void, isResume: boolean): Promise<void> {
+        /*
         if (!hfApiKey) {
             onProgress({ downloaded: 0, total: 0, percent: 0, status: 'error', error: 'Hugging Face API Key is required.' });
             return;
         }
+        */
 
         const controller = new AbortController();
         this.controllers.set(modelName, controller);
@@ -110,9 +112,15 @@ class DownloadManager {
             
             // If total is still unknown, fetch it
             if (total === 0) {
+                /*
                 const headResponse = await fetch(url, { 
                     method: 'HEAD',
                     headers: { 'Authorization': `Bearer ${hfApiKey}` },
+                    signal: controller.signal 
+                });
+                */
+                const headResponse = await fetch(url, { 
+                    method: 'HEAD',
                     signal: controller.signal 
                 });
                 if (!headResponse.ok) throw new Error(`Failed to get model info. Status: ${headResponse.status}`);
@@ -125,8 +133,14 @@ class DownloadManager {
             onProgress({ downloaded, total, percent: total > 0 ? (downloaded / total) * 100 : 0, status: 'downloading' });
     
             if (downloaded < total) {
+                /*
                 const response = await fetch(url, {
                     headers: { 'Range': `bytes=${downloaded}-`, 'Authorization': `Bearer ${hfApiKey}` },
+                    signal: controller.signal,
+                });
+                */
+                const response = await fetch(url, {
+                    headers: { 'Range': `bytes=${downloaded}-` },
                     signal: controller.signal,
                 });
     
@@ -163,10 +177,12 @@ class DownloadManager {
     }
     
     private async runIdbDownload(modelName: string, url: string, hfApiKey: string, onProgress: (progress: DownloadProgress) => void, isResume: boolean): Promise<void> {
+        /*
         if (!hfApiKey) {
             onProgress({ downloaded: 0, total: 0, percent: 0, status: 'error', error: 'Hugging Face API Key is required.' });
             return;
         }
+        */
 
         const controller = new AbortController();
         this.controllers.set(modelName, controller);
@@ -190,9 +206,15 @@ class DownloadManager {
                 chunkIndex = chunks.length;
             } else {
                  await this.deleteModel(modelName); // Clear any old data before a fresh start
+                 /*
                  const headResponse = await fetch(url, { 
                     method: 'HEAD',
                     headers: { 'Authorization': `Bearer ${hfApiKey}` },
+                    signal: controller.signal 
+                });
+                */
+                const headResponse = await fetch(url, { 
+                    method: 'HEAD',
                     signal: controller.signal 
                 });
                 if (!headResponse.ok) throw new Error(`Failed to get model info. Status: ${headResponse.status}`);
@@ -206,8 +228,14 @@ class DownloadManager {
                 const start = downloaded;
                 const end = Math.min(downloaded + CHUNK_SIZE - 1, total - 1);
 
+                /*
                 const chunkResponse = await fetch(url, {
                     headers: { 'Range': `bytes=${start}-${end}`, 'Authorization': `Bearer ${hfApiKey}` },
+                    signal: controller.signal,
+                });
+                */
+                const chunkResponse = await fetch(url, {
+                    headers: { 'Range': `bytes=${start}-${end}` },
                     signal: controller.signal,
                 });
 

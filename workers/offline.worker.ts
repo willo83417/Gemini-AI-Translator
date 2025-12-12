@@ -50,8 +50,8 @@ const getInferenceWorker = (): Worker => {
 }
 
 const handleTranslate = async (payload: any) => {
-    const { text, sourceLang, targetLang, isTwoStepEnabled } = payload;
-    const isJpToCn = sourceLang === 'Japanese' && targetLang.startsWith('Chinese');
+    const { text, sourceLang, targetLang, sourceLangCode, targetLangCode, isTwoStepEnabled } = payload;
+    const isJpToCn = sourceLangCode === 'ja' && targetLangCode.startsWith('zh');
 
     if (isTwoStepEnabled && isJpToCn) {
         try {
