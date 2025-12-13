@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import TranslationInput from './components/TranslationInput';
@@ -254,12 +255,10 @@ const App: React.FC = () => {
         };
     }, [t, showNotification, inputText, sourceLang, targetLang]);
     
-        //Do not delete this code, trigger the sandbox security mechanism and temporarily comment it out.
-    //禁止刪除該程式碼，觸發沙盒安全機制暫時註解
     useEffect(() => {
-        const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url), {
-          type: 'module',
-        });
+        // Correctly initialize the worker.
+        // It's not a module because it uses importScripts.
+        const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url));
         workerRef.current = worker;
         
         const onMessage = (event: MessageEvent) => messageHandlerRef.current(event);
@@ -993,10 +992,22 @@ const App: React.FC = () => {
             if (isOfflineModeEnabled) {
                 if (!isOfflineModelReady) throw new Error(t('notifications.offlineImageError'));
                 
+                // 1. Create ImageBitmap on the main thread
+                const imageBitmap = await new Promise<ImageBitmap>((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        createImageBitmap(img).then(resolve).catch(reject);
+                    };
+                    img.onerror = () => reject(new Error('Failed to load image for bitmap creation.'));
+                    img.src = imageDataUrl;
+                });
+
+                // 2. Post the ImageBitmap as a transferable object to the worker
                 workerRef.current?.postMessage({
                     type: 'extractText',
-                    payload: { imageUrl: imageDataUrl }
-                });
+                    payload: { imageBitmap }
+                }, [imageBitmap]);
+
 
             } else { // Online mode
                 if (!isOnline) throw new Error(t('notifications.offlineImageTranslateError'));

@@ -113,7 +113,7 @@ export const unloadOfflineModel = async () => {
     });
 };
 
-const _performStreamTranslation = (
+export const translateOfflineStream = (
     text: string,
     sourceLang: string,
     targetLang: string,
@@ -163,7 +163,7 @@ const _performStreamTranslation = (
     });
 };
 
-const _performFullTranslation = async (
+export const translateOfflineFull = async (
     text: string,
     sourceLang: string,
     targetLang: string,
@@ -171,54 +171,10 @@ const _performFullTranslation = async (
 ): Promise<string> => {
     let fullText = "";
     // Use the streaming function internally but just accumulate the result.
-    await _performStreamTranslation(text, sourceLang, targetLang, (chunk) => {
+    await translateOfflineStream(text, sourceLang, targetLang, (chunk) => {
         fullText += chunk;
     }, signal);
     return fullText;
-};
-
-
-export const translateOfflineStream = async (
-    text: string, 
-    sourceLang: string, 
-    targetLang: string, 
-    isTwoStepEnabled: boolean,
-    onChunk: (chunk: string) => void,
-    signal: AbortSignal
-): Promise<string> => {
-    if (!llmInference) {
-        throw new Error('Offline model is not initialized. Please select a model in settings.');
-    }
-
-    const isJpToCn = sourceLang === 'Japanese' && (targetLang.startsWith('Chinese'));
-
-    if (isTwoStepEnabled && isJpToCn) {
-        try {
-            // Step 1: Translate from Japanese to English (no streaming to UI)
-            const intermediateEnglish = await _performFullTranslation(text, 'Japanese', 'English', signal);
-            
-            if (signal.aborted) throw new DOMException('Translation cancelled.', 'AbortError');
-
-            if (!intermediateEnglish?.trim()) {
-                throw new Error('Intermediate English translation failed (result was empty). This can happen with very short or unusual text. Try disabling High-Accuracy mode in settings.');
-            }
-            
-            // Step 2: Translate from English to Chinese (with streaming to UI)
-            return _performStreamTranslation(intermediateEnglish, 'English', targetLang, onChunk, signal);
-
-        } catch(error) {
-            console.error('Two-step offline translation failed:', error);
-            if (error instanceof Error) {
-                // Re-throw the specific error from the intermediate step or the final step
-                throw error;
-            }
-            throw new Error('Failed during the two-step translation process.');
-        }
-
-    } else {
-        // Standard one-step translation
-        return _performStreamTranslation(text, sourceLang, targetLang, onChunk, signal);
-    }
 };
 
 export const extractTextFromImageOffline = async (

@@ -1,19 +1,34 @@
-// workers/worker.js
-//import { LlmInference, FilesetResolver } from '@mediapipe/tasks-genai';
-self.exports = {};
-importScripts("/public/genai_bundle.js"); //Development and Testing;開發測試
-//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用
-const { FilesetResolver, LlmInference } = self.exports;
+// workers/worker.ts
 
-const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm";
+	/**
+	* Environment Polyfill - MUST be at the very top.
+	* This spoofs the environment for MediaPipe's internal checks before the script is loaded.
+	*/
+	if (typeof (self as any).HTMLImageElement === 'undefined') {
+		(self as any).HTMLImageElement = class HTMLImageElement {};
+	}
+	if (typeof (self as any).Image === 'undefined') {
+		(self as any).Image = (self as any).HTMLImageElement;
+	}
+	if (typeof (self as any).HTMLVideoElement === 'undefined') {
+		(self as any).HTMLVideoElement = class HTMLVideoElement {};
+	}
 
-let llmInference = null;
-let currentTaskAbortController = null;
+	// Per user request, load the library using importScripts for a classic worker environment.
+	// @ts-ignore
+	self.exports = {};
+	importScripts("/public/genai_bundle.js"); //Development and Testing;開發測試
+	//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用
+	const { FilesetResolver, LlmInference } = self.exports;
 
-const handleInit = async (payload) => {
+	const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm";
+
+	let llmInference: InstanceType<typeof LlmInference> | null = null;
+	let currentTaskAbortController: AbortController | null = null;
+
+const handleInit = async (payload: any) => {
     const { modelBlob, modelSource, options } = payload;
     
-    // Unload previous model if it exists
     if (llmInference) {
         await llmInference.close();
         llmInference = null;
@@ -21,14 +36,14 @@ const handleInit = async (payload) => {
 
     try {
         if (!('gpu' in navigator)) {
-          throw new Error('WebGPU is not supported.');
+            throw new Error('WebGPU is not supported.');
         }
 
         if (!modelBlob) {
             throw new Error(`Model data for ${modelSource} not found.`);
         }
-        const modelUrl = URL.createObjectURL(modelBlob);
         
+        const modelUrl = URL.createObjectURL(modelBlob);
         const filesetResolver = await FilesetResolver.forGenAiTasks(MEDIAPIPE_WASM);
 
         const { 
@@ -41,7 +56,7 @@ const handleInit = async (payload) => {
         });
         
         URL.revokeObjectURL(modelUrl);
-        self.postMessage({ type: 'init_done', payload: { modelIdentifier: `${modelSource}-${JSON.stringify(options)}` } });
+        self.postMessage({ type: 'init_done', payload: { modelIdentifier: modelSource } });
 
     } catch (error) {
         llmInference = null;
@@ -58,10 +73,8 @@ const handleUnload = async () => {
     self.postMessage({ type: 'unload_done' });
 };
 
-const performTranslation = (text, sourceLang, targetLang, stream) => {
-    if (!llmInference) {
-        throw new Error('Offline model is not initialized.');
-    }
+const performTranslation = (text: string, sourceLang: string, targetLang: string, stream: boolean) => {
+    if (!llmInference) throw new Error('Offline model is not initialized.');
     
     currentTaskAbortController = new AbortController();
     const signal = currentTaskAbortController.signal;
@@ -72,7 +85,7 @@ const performTranslation = (text, sourceLang, targetLang, stream) => {
         
         try {
             let fullText = "";
-            const streamCallback = (partialResult, done) => {
+            const streamCallback = (partialResult: string, done: boolean) => {
                 if (signal.aborted) return;
                 fullText += partialResult;
                 if (stream) {
@@ -97,33 +110,43 @@ const performTranslation = (text, sourceLang, targetLang, stream) => {
     });
 };
 
-
-const handleExtractText = async (payload) => {
+const handleExtractText = async (payload: any) => {
     if (!llmInference) {
         return self.postMessage({ type: 'extract_text_error', payload: { error: 'Offline model not initialized.' } });
     }
+    
+    const { imageBitmap } = payload;
     const prompt = `Extract all text from the following image. Return only the extracted text without any extra comments or explanations.`;
     try {
+        // Pass the ImageBitmap object directly to the model, which was transferred from the main thread.
         const response = await llmInference.generateResponse([
-            `<start_of_turn>user\n${prompt}\n`, { imageSource: payload.imageUrl }, `<end_of_turn>\n<start_of_turn>model\n`,
+            `<start_of_turn>user\n${prompt}\n`, 
+            { imageSource: imageBitmap }, 
+            `<end_of_turn>\n<start_of_turn>model\n`,
         ]);
+        
+        // Clean up the bitmap to free up memory.
+        imageBitmap.close();
+
         self.postMessage({ type: 'extract_text_done', payload: { text: response.trim() } });
     } catch (error) {
+        console.error('OCR Worker Error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Offline image text extraction failed.';
         self.postMessage({ type: 'extract_text_error', payload: { error: errorMessage } });
     }
 };
 
-const handleTranscribe = async (payload) => {
+const handleTranscribe = async (payload: any) => {
     if (!llmInference) {
         return self.postMessage({ type: 'transcribe_error', payload: { error: 'Offline model not initialized.' } });
     }
     const { audioUrl, sourceLang } = payload;
     const languageClause = sourceLang === 'Auto Detect' ? 'Auto-detect the language.' : `The language is ${sourceLang}.`;
-	const prompt = `Transcribe the following audio. ${languageClause}  Return only the transcribed text.`;
+    const prompt = `Transcribe the following audio. ${languageClause} Return only the transcribed text.`;
     try {
         const response = await llmInference.generateResponse([
-			`<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, { audioSource: audioUrl }
+            `<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, 
+            { audioSource: audioUrl }
         ]);
         self.postMessage({ type: 'transcribe_done', payload: { text: response.trim(), audioUrl } });
     } catch (error) {
@@ -132,7 +155,7 @@ const handleTranscribe = async (payload) => {
     }
 };
 
-self.onmessage = async (event) => {
+self.onmessage = async (event: MessageEvent) => {
     const { type, payload } = event.data;
     try {
         switch (type) {
@@ -149,7 +172,7 @@ self.onmessage = async (event) => {
             }
             case 'translate_full': {
                 const result = await performTranslation(payload.text, payload.sourceLang, payload.targetLang, false);
-                self.postMessage({ type: 'translation_full_done', payload: { result, originalPayload: payload } });
+                self.postMessage({ type: 'translation_full_done', payload: { result } });
                 break;
             }
             case 'cancel_task':
@@ -166,13 +189,13 @@ self.onmessage = async (event) => {
         }
     } catch (error) {
         const isAbort = error instanceof DOMException && error.name === 'AbortError';
-        const messageType = type.replace('_stream', '').replace('_full', ''); // e.g. translate_stream -> translate
+        const baseType = type.replace('_stream', '').replace('_full', '');
         
         if (isAbort) {
-            self.postMessage({ type: `${messageType}_cancelled` });
+            self.postMessage({ type: 'translation_cancelled' });
         } else {
             const errorMessage = error instanceof Error ? error.message : `Unknown error in ${type}.`;
-            self.postMessage({ type: `${messageType}_error`, payload: { error: errorMessage } });
+            self.postMessage({ type: `${baseType}_error`, payload: { error: errorMessage } });
         }
     } finally {
         currentTaskAbortController = null;

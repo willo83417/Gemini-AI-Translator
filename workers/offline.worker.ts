@@ -4,34 +4,31 @@
 
 let inferenceWorker: Worker | null = null;
 let twoStepState: {
-    originalPayload: any;
     resolve: (value: unknown) => void;
     reject: (reason?: any) => void;
 } | null = null;
 
-
 const initInferenceWorker = () => {
     if (inferenceWorker) return;
     
-    //inferenceWorker = new Worker(new URL('/public/worker.js', import.meta.url)); //Development and Testing;開發測試
-	inferenceWorker = new Worker(new URL('./worker.js', import.meta.url));	//Development and Testing & Both yarn build and packaging can be used.; yarn build打包 皆可使用
-
+    // Create the worker as a classic script, NOT a module,
+    inferenceWorker = new Worker(new URL('./worker.ts', import.meta.url)); //Development and Testing & Both yarn build and packaging can be used.; yarn build打包 皆可使用
     inferenceWorker.onmessage = (event: MessageEvent) => {
         const { type, payload } = event.data;
 
-        // If we are in a two-step translation, check if this is the intermediate result.
+        // Handle intermediate results for two-step translation (JP -> EN -> CN)
         if (twoStepState && type === 'translation_full_done') {
             twoStepState.resolve(payload.result);
             twoStepState = null;
             return;
         }
-         if (twoStepState && type === 'translation_error') {
+        if (twoStepState && (type === 'translation_error' || type === 'error')) {
             twoStepState.reject(new Error(payload.error));
             twoStepState = null;
             return;
         }
 
-        // Otherwise, forward the message to the main thread.
+        // Forward all other messages to the main thread
         self.postMessage(event.data);
     };
 
@@ -46,7 +43,7 @@ const initInferenceWorker = () => {
 };
 
 const getInferenceWorker = (): Worker => {
-    initInferenceWorker();
+    if (!inferenceWorker) initInferenceWorker();
     return inferenceWorker!;
 }
 
@@ -56,9 +53,9 @@ const handleTranslate = async (payload: any) => {
 
     if (isTwoStepEnabled && isJpToCn) {
         try {
-            // Step 1: Japanese to English (full translation)
+            // Step 1: Japanese to English
             const intermediateEnglishPromise = new Promise((resolve, reject) => {
-                twoStepState = { originalPayload: payload, resolve, reject };
+                twoStepState = { resolve, reject };
                 getInferenceWorker().postMessage({
                     type: 'translate_full',
                     payload: { text, sourceLang: 'Japanese', targetLang: 'English' }
@@ -68,10 +65,10 @@ const handleTranslate = async (payload: any) => {
             const intermediateEnglish = await intermediateEnglishPromise as string;
 
             if (!intermediateEnglish?.trim()) {
-                throw new Error('Intermediate English translation failed (result was empty).');
+                throw new Error('Intermediate English translation failed.');
             }
 
-            // Step 2: English to Chinese (streamed)
+            // Step 2: English to Chinese
             getInferenceWorker().postMessage({
                 type: 'translate_stream',
                 payload: { text: intermediateEnglish, sourceLang: 'English', targetLang }
@@ -93,7 +90,6 @@ const handleCancel = () => {
         twoStepState.reject(new DOMException('Translation cancelled.', 'AbortError'));
         twoStepState = null;
     }
-    // Forward the cancel request to the inference worker
     if (inferenceWorker) {
         inferenceWorker.postMessage({ type: 'cancel_task' });
     }
@@ -102,18 +98,20 @@ const handleCancel = () => {
 self.onmessage = async (event: MessageEvent) => {
     const { type, payload } = event.data;
 
-    // Ensure worker is initialized for any task.
-    if (type !== 'init' && !inferenceWorker) {
+    // Initialize worker on first message if not already done
+    if (!inferenceWorker) {
         initInferenceWorker();
     }
     
     switch (type) {
         case 'init':
         case 'unload':
-        case 'extractText':
         case 'transcribe':
-            // Forward simple messages directly
             getInferenceWorker().postMessage(event.data);
+            break;
+        case 'extractText':
+            // Forward the message and explicitly include the imageBitmap in the transfer list
+            getInferenceWorker().postMessage(event.data, [payload.imageBitmap]);
             break;
         case 'translate':
             await handleTranslate(payload);
