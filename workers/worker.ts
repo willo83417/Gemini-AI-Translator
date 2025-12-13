@@ -1,9 +1,9 @@
 // workers/worker.ts
 
 	/**
-	* Environment Polyfill - MUST be at the very top.
-	* This spoofs the environment for MediaPipe's internal checks before the script is loaded.
-	*/
+	 * Environment Polyfill - MUST be at the very top.
+	 * This spoofs the environment for MediaPipe's internal checks before the script is loaded.
+	 */
 	if (typeof (self as any).HTMLImageElement === 'undefined') {
 		(self as any).HTMLImageElement = class HTMLImageElement {};
 	}
@@ -13,9 +13,120 @@
 	if (typeof (self as any).HTMLVideoElement === 'undefined') {
 		(self as any).HTMLVideoElement = class HTMLVideoElement {};
 	}
+	
+	/**
+	 * Custom AudioContext Polyfill for Web Workers.
+	 * The MediaPipe GenAI library requires `AudioContext.decodeAudioData` to process audio,
+	 * but this API is not available in workers. This polyfill provides the necessary functionality.
+	 */
+	if (typeof (self as any).AudioContext === 'undefined') {
+		// FIX: Define a helper function to read strings from a DataView, replacing the non-standard prototype extension.
+		const dataViewToString = (view: DataView, offset: number, length: number): string => {
+			let result = '';
+			for (let i = 0; i < length; i++) {
+				result += String.fromCharCode(view.getUint8(offset + i));
+			}
+			return result;
+		};
+
+		class PolyfillAudioBuffer {
+			readonly sampleRate: number;
+			readonly length: number;
+			readonly duration: number;
+			readonly numberOfChannels: number;
+			private channels: Float32Array[];
+	
+			constructor(options: {
+				sampleRate: number;
+				numberOfChannels: number;
+				pcmData: Float32Array[];
+			}) {
+				this.sampleRate = options.sampleRate;
+				this.numberOfChannels = options.numberOfChannels;
+				this.channels = options.pcmData;
+				this.length = this.channels[0]?.length || 0;
+				this.duration = this.length / this.sampleRate;
+			}
+	
+			getChannelData(channel: number): Float32Array {
+				if (channel >= this.numberOfChannels) {
+					throw new Error(`Invalid channel index ${channel}.`);
+				}
+				return this.channels[channel];
+			}
+		}
+	
+		(self as any).AudioContext = class PolyfillAudioContext {
+			// A lightweight WAV parser to mimic decodeAudioData
+			decodeAudioData(arrayBuffer: ArrayBuffer): Promise<PolyfillAudioBuffer> {
+				return new Promise((resolve, reject) => {
+					try {
+						const view = new DataView(arrayBuffer);
+						
+						// Basic WAV header validation
+						// FIX: Use the helper function instead of the non-standard prototype method.
+						if (dataViewToString(view, 0, 4) !== 'RIFF' || dataViewToString(view, 8, 4) !== 'WAVE') {
+							return reject(new DOMException('Invalid WAV file header', 'DataCloneError'));
+						}
+	
+						// Find 'fmt ' and 'data' chunks
+						let fmtChunkOffset = -1, dataChunkOffset = -1, dataChunkSize = 0;
+						let offset = 12;
+						while(offset < view.byteLength) {
+							// FIX: Use the helper function instead of the non-standard prototype method.
+							const chunkId = dataViewToString(view, offset, 4);
+							const chunkSize = view.getUint32(offset + 4, true);
+							if (chunkId === 'fmt ') {
+								fmtChunkOffset = offset + 8;
+							} else if (chunkId === 'data') {
+								dataChunkOffset = offset + 8;
+								dataChunkSize = chunkSize;
+							}
+							offset += 8 + chunkSize;
+						}
+	
+						if (fmtChunkOffset === -1 || dataChunkOffset === -1) {
+							return reject(new DOMException('Could not find fmt and data chunks in WAV file', 'DataCloneError'));
+						}
+	
+						const numChannels = view.getUint16(fmtChunkOffset + 2, true);
+						const sampleRate = view.getUint32(fmtChunkOffset + 4, true);
+						const bitsPerSample = view.getUint16(fmtChunkOffset + 14, true);
+	
+						if (bitsPerSample !== 16) {
+							return reject(new DOMException(`Unsupported bitsPerSample: ${bitsPerSample}. Only 16-bit PCM is supported.`, 'NotSupportedError'));
+						}
+	
+						const pcmData: Float32Array[] = Array.from({ length: numChannels }, () => new Float32Array(dataChunkSize / (numChannels * (bitsPerSample / 8))));
+						const samplesCount = dataChunkSize / (bitsPerSample / 8);
+	
+						for (let i = 0; i < samplesCount; i++) {
+							const sampleOffset = dataChunkOffset + i * (bitsPerSample / 8);
+							const channel = i % numChannels;
+							const sampleIndex = Math.floor(i / numChannels);
+							
+							const value = view.getInt16(sampleOffset, true);
+							pcmData[channel][sampleIndex] = value / 32768.0; // Normalize to [-1.0, 1.0]
+						}
+	
+						resolve(new PolyfillAudioBuffer({
+							sampleRate,
+							numberOfChannels: numChannels,
+							pcmData,
+						}));
+					} catch (e) {
+						reject(e);
+					}
+				});
+			}
+		};
+	}
+	
+	if (typeof (self as any).OfflineAudioContext === 'undefined') {
+		(self as any).OfflineAudioContext = (self as any).AudioContext;
+	}
 
 	// Per user request, load the library using importScripts for a classic worker environment.
-	// @ts-ignore
 	(self as any).exports = {};
 	importScripts("/public/genai_bundle.js"); //Development and Testing;開發測試
 	//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用
@@ -67,8 +178,10 @@ const handleInit = async (payload: any) => {
 
 const handleUnload = async () => {
     if (llmInference) {
+        console.log('Unloading offline model from inference worker...');
         await llmInference.close();
         llmInference = null;
+        console.log('Offline model unloaded successfully.');
     }
     self.postMessage({ type: 'unload_done' });
 };
@@ -116,18 +229,16 @@ const handleExtractText = async (payload: any) => {
     }
     
     const { imageBitmap } = payload;
+    // Gemma-3 Specific: Use <image> token in the prompt
     const prompt = `Extract all text from the following image. Return only the extracted text without any extra comments or explanations.`;
     try {
-        // Pass the ImageBitmap object directly to the model, which was transferred from the main thread.
         const response = await llmInference.generateResponse([
             `<start_of_turn>user\n${prompt}\n`, 
             { imageSource: imageBitmap }, 
             `<end_of_turn>\n<start_of_turn>model\n`,
         ]);
         
-        // Clean up the bitmap to free up memory.
         imageBitmap.close();
-
         self.postMessage({ type: 'extract_text_done', payload: { text: response.trim() } });
     } catch (error) {
         console.error('OCR Worker Error:', error);
@@ -140,18 +251,35 @@ const handleTranscribe = async (payload: any) => {
     if (!llmInference) {
         return self.postMessage({ type: 'transcribe_error', payload: { error: 'Offline model not initialized.' } });
     }
-    const { audioUrl, sourceLang } = payload;
-    const languageClause = sourceLang === 'Auto Detect' ? 'Auto-detect the language.' : `The language is ${sourceLang}.`;
-    const prompt = `Transcribe the following audio. ${languageClause} Return only the transcribed text.`;
+    const { audioData, sourceLang } = payload; 
+    
+    let audioUrl: string | null = null;
     try {
+        audioUrl = URL.createObjectURL(audioData);
+        
+        const languageClause = sourceLang === 'Auto Detect' ? 'Auto-detect the language.' : `The language is ${sourceLang}.`;
+        
+
+        const prompt = `Transcribe the following audio. ${languageClause}  Return only the transcribed text.`;
+        
         const response = await llmInference.generateResponse([
             `<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, 
             { audioSource: audioUrl }
         ]);
-        self.postMessage({ type: 'transcribe_done', payload: { text: response.trim(), audioUrl } });
+        
+        if (!response || response.trim() === "") {
+             console.warn("Model returned an empty response for transcription.");
+        }
+
+        self.postMessage({ type: 'transcribe_done', payload: { text: response.trim() } });
     } catch (error) {
+        console.error('Transcription Internal Error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Offline audio transcription failed.';
-        self.postMessage({ type: 'transcribe_error', payload: { error: errorMessage, audioUrl } });
+        self.postMessage({ type: 'transcribe_error', payload: { error: errorMessage } });
+    } finally {
+        if (audioUrl) {
+            URL.revokeObjectURL(audioUrl);
+        }
     }
 };
 

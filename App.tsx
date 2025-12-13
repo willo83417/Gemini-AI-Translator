@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import TranslationInput from './components/TranslationInput';
@@ -149,6 +150,8 @@ const App: React.FC = () => {
 
     // Offline recording countdown state
     const [recordingCountdown, setRecordingCountdown] = useState<number | null>(null);
+    const [isAwaitingAstTranslation, setIsAwaitingAstTranslation] = useState(false);
+
 
     type NotificationType = 'error' | 'success';
     interface Notification {
@@ -177,7 +180,7 @@ const App: React.FC = () => {
     const mediaStreamRef = useRef<MediaStream | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
-    // NOTE: Ref to hold the Web Audio API context for real-time noise reduction.
+    // NOTE: This ref is no longer used for pre-processing, but kept in case it's needed for other features.
     const audioProcessingContextRef = useRef<AudioContext | null>(null);
     // Ref for the offline recording countdown timer
     const countdownTimerRef = useRef<number | null>(null);
@@ -241,22 +244,27 @@ const App: React.FC = () => {
                     setIsLoading(false);
                     break;
                 case 'transcribe_done':
-                    setInputText(payload.text);
+                    const transcribedText = payload.text;
+                    setInputText(transcribedText);
                     setIsLoading(false);
-                    if (payload.audioUrl) URL.revokeObjectURL(payload.audioUrl);
+                    if (isAwaitingAstTranslation) {
+                        setIsAwaitingAstTranslation(false);
+                        if (transcribedText.trim()) {
+                            performTranslate(transcribedText);
+                        }
+                    }
                     break;
                 case 'transcribe_error':
                     showNotification(t('notifications.transcriptionFailed', { errorMessage: payload.error }), 'error');
                     setInputText('');
                     setIsLoading(false);
-                    if (payload.audioUrl) URL.revokeObjectURL(payload.audioUrl);
+                    setIsAwaitingAstTranslation(false);
                     break;
             }
         };
-    }, [t, showNotification, inputText, sourceLang, targetLang]);
+    }, [t, showNotification, inputText, sourceLang, targetLang, isAwaitingAstTranslation]);
     
     useEffect(() => {
-        //Do not delete this code, trigger the sandbox security mechanism and temporarily comment it out.
 		//禁止刪除該程式碼，觸發沙盒安全機制暫時註解
         //These need to be set up as type: 'module'.；這邊要設定為type: 'module'
         const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url),{type: 'module'});
@@ -383,6 +391,7 @@ const App: React.FC = () => {
     
         if (!isOfflineModeEnabled || !modelToLoad) {
             if (isOfflineModelInitialized || isOfflineModelInitializing) {
+                console.log('Requesting offline model unload.');
                 workerRef.current?.postMessage({ type: 'unload' });
             }
             return;
@@ -659,10 +668,117 @@ const App: React.FC = () => {
         setIsRecording(!isRecording);
     }, [isRecording]);
 
+    const createRecordingOnStopHandler = useCallback((isForAst: boolean) => {
+        return async () => {
+            setIsLoading(true);
+            setInputText(t('notifications.processingAudio'));
+            if (isForAst) {
+                setTranslatedText('');
+            }
+    
+            if (audioChunksRef.current.length === 0) {
+                setIsLoading(false);
+                setInputText('');
+                showNotification(t('notifications.noAudioRecorded'), 'error');
+                return;
+            }
+    
+            const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current?.mimeType });
+            audioChunksRef.current = [];
+    
+            let postProcessingAudioContext: AudioContext | null = null;
+    
+            try {
+                postProcessingAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const arrayBuffer = await audioBlob.arrayBuffer();
+                const originalAudioBuffer = await postProcessingAudioContext.decodeAudioData(arrayBuffer);
+    
+                const processingContext = new OfflineAudioContext(
+                    originalAudioBuffer.numberOfChannels,
+                    originalAudioBuffer.length,
+                    originalAudioBuffer.sampleRate
+                );
+                const sourceNode = processingContext.createBufferSource();
+                sourceNode.buffer = originalAudioBuffer;
+    
+                let peak = 0;
+                for (let c = 0; c < originalAudioBuffer.numberOfChannels; c++) {
+                    const channelData = originalAudioBuffer.getChannelData(c);
+                    for (let i = 0; i < channelData.length; i++) {
+                        peak = Math.max(peak, Math.abs(channelData[i]));
+                    }
+                }
+                const gainNode = processingContext.createGain();
+                const targetPeak = 0.85;
+                if (peak > 0 && peak < targetPeak) {
+                    gainNode.gain.value = targetPeak / peak;
+                } else {
+                    gainNode.gain.value = 1;
+                }
+    
+                const highPassFilter = processingContext.createBiquadFilter();
+                highPassFilter.type = 'highpass';
+                highPassFilter.frequency.value = 100;
+
+                const peakingFilter = processingContext.createBiquadFilter();
+                peakingFilter.type = 'peaking';
+                peakingFilter.frequency.value = 3000;
+                peakingFilter.Q.value = 1;
+                peakingFilter.gain.value = 3;
+    
+                sourceNode.connect(gainNode);
+                gainNode.connect(highPassFilter);
+                highPassFilter.connect(peakingFilter);
+                peakingFilter.connect(processingContext.destination);
+                sourceNode.start();
+                
+                const processedBuffer = await processingContext.startRendering();
+    
+                const TARGET_SAMPLE_RATE = 16000;
+                let finalAudioBuffer = processedBuffer;
+    
+                // Resample if necessary
+                if (finalAudioBuffer.sampleRate !== TARGET_SAMPLE_RATE) {
+                    const frameCount = finalAudioBuffer.length * TARGET_SAMPLE_RATE / finalAudioBuffer.sampleRate;
+                    const resampleContext = new OfflineAudioContext(1, frameCount, TARGET_SAMPLE_RATE);
+                    const bufferSource = resampleContext.createBufferSource();
+                    bufferSource.buffer = finalAudioBuffer;
+                    bufferSource.connect(resampleContext.destination);
+                    bufferSource.start();
+                    finalAudioBuffer = await resampleContext.startRendering();
+                }
+    
+                const pcmWavBlob = audioBufferToWav(finalAudioBuffer);
+    
+                if (isForAst) {
+                    setIsAwaitingAstTranslation(true);
+                }
+    
+                workerRef.current?.postMessage({
+                    type: 'transcribe',
+                    payload: {
+                        audioData: pcmWavBlob,
+                        sourceLang: i18n.t(sourceLang.name, { lng: 'en' })
+                    }
+                });
+    
+            } catch (err) {
+                const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while processing audio.';
+                const notificationKey = isForAst ? 'notifications.astFailed' : 'notifications.transcriptionFailed';
+                showNotification(t(notificationKey, { errorMessage }), 'error');
+                setInputText('');
+                if (isForAst) setIsAwaitingAstTranslation(false);
+                setIsLoading(false);
+            } finally {
+                if (postProcessingAudioContext && postProcessingAudioContext.state !== 'closed') {
+                    postProcessingAudioContext.close();
+                }
+            }
+        };
+    }, [setIsLoading, setInputText, setTranslatedText, showNotification, t, i18n, sourceLang, setIsAwaitingAstTranslation]);
+
     const handleOfflineRecordingToggle = useCallback(async () => {
         if (isRecording) {
-            // Stop recording
-            // Clear the countdown timer when manually stopping.
             if (countdownTimerRef.current) {
                 clearInterval(countdownTimerRef.current);
                 countdownTimerRef.current = null;
@@ -672,121 +788,33 @@ const App: React.FC = () => {
             if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
                 mediaRecorderRef.current.stop();
             }
-            // Stop the original raw stream tracks.
             if (mediaStreamRef.current) {
                 mediaStreamRef.current.getTracks().forEach(track => track.stop());
                 mediaStreamRef.current = null;
             }
-            // NOTE: Close the audio processing context to release resources.
-            if (audioProcessingContextRef.current && audioProcessingContextRef.current.state !== 'closed') {
-                audioProcessingContextRef.current.close();
-                audioProcessingContextRef.current = null;
-            }
             setIsRecording(false);
         } else {
-            // Start recording
             try {
                 setInputText('');
                 setTranslatedText('');
-                // Get the raw audio stream from the microphone.
                 const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-                // --- START: Real-time Noise Reduction Pipeline ---
-                const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                audioProcessingContextRef.current = audioContext;
-                const source = audioContext.createMediaStreamSource(rawStream);
-                const highPassFilter = audioContext.createBiquadFilter();
-                highPassFilter.type = 'highpass';
-                highPassFilter.frequency.value = 150;
-                const compressor = audioContext.createDynamicsCompressor();
-                compressor.threshold.value = -50;
-                compressor.knee.value = 40;
-                compressor.ratio.value = 12;
-                compressor.attack.value = 0;
-                compressor.release.value = 0.25;
-                const destination = audioContext.createMediaStreamDestination();
-                source.connect(highPassFilter);
-                highPassFilter.connect(compressor);
-                compressor.connect(destination);
-                const processedStream = destination.stream;
                 mediaStreamRef.current = rawStream;
-                // --- END: Real-time Noise Reduction Pipeline ---
 
                 if (typeof MediaRecorder === 'undefined') {
                     showNotification(t('notifications.mediaRecorderUnsupported'), 'error');
                     rawStream.getTracks().forEach(track => track.stop());
-                    audioContext.close();
                     return;
                 }
 
-                // NOTE: Use the processedStream for the MediaRecorder, not the rawStream.
-                const recorder = new MediaRecorder(processedStream);
+                const recorder = new MediaRecorder(rawStream);
                 mediaRecorderRef.current = recorder;
                 audioChunksRef.current = [];
-
                 recorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunksRef.current.push(event.data);
-                    }
+                    if (event.data.size > 0) audioChunksRef.current.push(event.data);
                 };
 
-                recorder.onstop = async () => {
-                    setIsLoading(true);
-                    setInputText(t('notifications.processingAudio'));
-                    setTranslatedText('');
-                    
-                    if (audioChunksRef.current.length === 0) {
-                        setIsLoading(false);
-                        setInputText('');
-                        showNotification(t('notifications.noAudioRecorded'), 'error');
-                        return;
-                    }
-
-                    const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
-                    audioChunksRef.current = [];
-
-                    let postProcessingAudioContext: AudioContext | null = null;
-
-                    try {
-                        postProcessingAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                        const arrayBuffer = await audioBlob.arrayBuffer();
-                        const originalAudioBuffer = await postProcessingAudioContext.decodeAudioData(arrayBuffer);
-                        
-                        const TARGET_SAMPLE_RATE = 16000;
-                        let finalAudioBuffer = originalAudioBuffer;
-
-                        if (originalAudioBuffer.sampleRate !== TARGET_SAMPLE_RATE) {
-                            const frameCount = originalAudioBuffer.length * TARGET_SAMPLE_RATE / originalAudioBuffer.sampleRate;
-                            const offlineContext = new OfflineAudioContext(1, frameCount, TARGET_SAMPLE_RATE);
-                            const bufferSource = offlineContext.createBufferSource();
-                            bufferSource.buffer = originalAudioBuffer;
-                            bufferSource.connect(offlineContext.destination);
-                            bufferSource.start();
-                            finalAudioBuffer = await offlineContext.startRendering();
-                        }
-                        
-                        const wavBlob = audioBufferToWav(finalAudioBuffer);
-                        const wavUrl = URL.createObjectURL(wavBlob);
-
-                        workerRef.current?.postMessage({
-                            type: 'transcribe',
-                            payload: { audioUrl: wavUrl, sourceLang: i18n.t(sourceLang.name, { lng: 'en' }) }
-                        });
-                        // URL will be revoked in the worker message handler.
-
-                    } catch (err) {
-                         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while processing audio.';
-                         showNotification(t('notifications.transcriptionFailed', { errorMessage }), 'error');
-                         setInputText('');
-                         setIsLoading(false);
-                    } finally {
-                        if (postProcessingAudioContext && postProcessingAudioContext.state !== 'closed') {
-                            postProcessingAudioContext.close();
-                        }
-                    }
-                };
+                recorder.onstop = createRecordingOnStopHandler(false);
                 
-                // Start the 30-second countdown timer.
                 if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
                 setRecordingCountdown(30);
                 countdownTimerRef.current = window.setInterval(() => {
@@ -798,11 +826,12 @@ const App: React.FC = () => {
             } catch (err) {
                 showNotification(t('notifications.micPermissionError'), 'error');
                 console.error('Error starting offline recording:', err);
+                setIsLoading(false);
             }
         }
-    }, [isRecording, sourceLang, showNotification, t, i18n]);
+    }, [isRecording, showNotification, t, createRecordingOnStopHandler]);
 
-    // This effect handles the automatic stopping of the recording when the countdown reaches zero.
+
     useEffect(() => {
         if (recordingCountdown === 0) {
             handleOfflineRecordingToggle();
@@ -840,7 +869,6 @@ const App: React.FC = () => {
 
     const handleOfflineAstRecordingToggle = useCallback(async () => {
         if (isAstRecording) {
-            // Stop recording
             if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
                 mediaRecorderRef.current.stop();
             }
@@ -848,114 +876,36 @@ const App: React.FC = () => {
                 mediaStreamRef.current.getTracks().forEach(track => track.stop());
                 mediaStreamRef.current = null;
             }
-            if (audioProcessingContextRef.current && audioProcessingContextRef.current.state !== 'closed') {
-                audioProcessingContextRef.current.close();
-                audioProcessingContextRef.current = null;
-            }
             setIsAstRecording(false);
         } else {
-            // Start recording
             try {
                 setInputText('');
                 setTranslatedText('');
                 const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                audioProcessingContextRef.current = audioContext;
-                const source = audioContext.createMediaStreamSource(rawStream);
-                const highPassFilter = audioContext.createBiquadFilter();
-                highPassFilter.type = 'highpass';
-                highPassFilter.frequency.value = 150;
-                const compressor = audioContext.createDynamicsCompressor();
-                compressor.threshold.value = -50; compressor.knee.value = 40; compressor.ratio.value = 12; compressor.attack.value = 0; compressor.release.value = 0.25;
-                const destination = audioContext.createMediaStreamDestination();
-                source.connect(highPassFilter);
-                highPassFilter.connect(compressor);
-                compressor.connect(destination);
-                const processedStream = destination.stream;
                 mediaStreamRef.current = rawStream;
 
                 if (typeof MediaRecorder === 'undefined') {
                     showNotification(t('notifications.mediaRecorderUnsupported'), 'error');
                     rawStream.getTracks().forEach(track => track.stop());
-                    audioContext.close();
                     return;
                 }
-
-                const recorder = new MediaRecorder(processedStream);
+                
+                const recorder = new MediaRecorder(rawStream);
                 mediaRecorderRef.current = recorder;
                 audioChunksRef.current = [];
                 recorder.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
-                recorder.onstop = async () => {
-                    setIsLoading(true);
-                    setInputText(t('notifications.processingAudio'));
-                    setTranslatedText('');
-                    if (audioChunksRef.current.length === 0) {
-                        setIsLoading(false);
-                        setInputText('');
-                        showNotification(t('notifications.noAudioRecorded'), 'error');
-                        return;
-                    }
-                    const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
-                    audioChunksRef.current = [];
-                    let postProcessingAudioContext: AudioContext | null = null;
-
-                    try {
-                        postProcessingAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                        const arrayBuffer = await audioBlob.arrayBuffer();
-                        const originalAudioBuffer = await postProcessingAudioContext.decodeAudioData(arrayBuffer);
-                        const TARGET_SAMPLE_RATE = 16000;
-                        let finalAudioBuffer = originalAudioBuffer;
-                        if (originalAudioBuffer.sampleRate !== TARGET_SAMPLE_RATE) {
-                            const frameCount = originalAudioBuffer.length * TARGET_SAMPLE_RATE / originalAudioBuffer.sampleRate;
-                            const offlineContext = new OfflineAudioContext(1, frameCount, TARGET_SAMPLE_RATE);
-                            const bufferSource = offlineContext.createBufferSource();
-                            bufferSource.buffer = originalAudioBuffer;
-                            bufferSource.connect(offlineContext.destination);
-                            bufferSource.start();
-                            finalAudioBuffer = await offlineContext.startRendering();
-                        }
-                        const wavBlob = audioBufferToWav(finalAudioBuffer);
-                        const wavUrl = URL.createObjectURL(wavBlob);
-
-                        workerRef.current?.postMessage({
-                            type: 'transcribe',
-                            payload: { audioUrl: wavUrl, sourceLang: i18n.t(sourceLang.name, { lng: 'en' }) }
-                        });
-                        // After getting the text, immediately translate it.
-                        // This requires chaining messages or waiting.
-                        // For now, let's keep it simple: transcribe, then user clicks translate.
-                        // To auto-translate, we need a more complex state machine with the worker.
-                        // The current message handler for 'transcribe_done' could trigger a translate message.
-                        // Let's modify the handler.
-                        // No, let's just performTranslate in the handler.
-                        const originalHandler = messageHandlerRef.current;
-                        messageHandlerRef.current = (event: MessageEvent) => {
-                            if (event.data.type === 'transcribe_done') {
-                                setInputText(event.data.payload.text);
-                                performTranslate(event.data.payload.text);
-                                if (event.data.payload.audioUrl) URL.revokeObjectURL(event.data.payload.audioUrl);
-                                messageHandlerRef.current = originalHandler; // Restore original handler
-                            } else {
-                                originalHandler(event);
-                            }
-                        };
-                    } catch (err) {
-                        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during speech translation.';
-                        showNotification(t('notifications.astFailed', { errorMessage }), 'error');
-                        setInputText('');
-                    } finally {
-                        if (postProcessingAudioContext && postProcessingAudioContext.state !== 'closed') postProcessingAudioContext.close();
-                    }
-                };
+                
+                recorder.onstop = createRecordingOnStopHandler(true);
                 
                 recorder.start();
                 setIsAstRecording(true);
             } catch (err) {
                 showNotification(t('notifications.micPermissionError'), 'error');
                 console.error('Error starting offline AST recording:', err);
+                setIsLoading(false);
             }
         }
-    }, [isAstRecording, sourceLang.name, showNotification, performTranslate, t, i18n]);
+    }, [isAstRecording, showNotification, t, createRecordingOnStopHandler]);
 
     const handleToggleAstRecording = useCallback(() => {
         if (sourceLang.code === 'auto') {
@@ -997,7 +947,6 @@ const App: React.FC = () => {
             if (isOfflineModeEnabled) {
                 if (!isOfflineModelReady) throw new Error(t('notifications.offlineImageError'));
                 
-                // 1. Create ImageBitmap on the main thread
                 const imageBitmap = await new Promise<ImageBitmap>((resolve, reject) => {
                     const img = new Image();
                     img.onload = () => {
@@ -1007,7 +956,6 @@ const App: React.FC = () => {
                     img.src = imageDataUrl;
                 });
 
-                // 2. Post the ImageBitmap as a transferable object to the worker
                 workerRef.current?.postMessage({
                     type: 'extractText',
                     payload: { imageBitmap }
@@ -1031,12 +979,11 @@ const App: React.FC = () => {
                 setInputText(result.sourceText);
                 setTranslatedText(result.translatedText);
 
-                // Add to history
                 const newHistoryItem: TranslationHistoryItem = {
                     id: Date.now(),
                     inputText: result.sourceText,
                     translatedText: result.translatedText,
-                    sourceLang, // Might not be accurate if auto-detected, but it's the best we have
+                    sourceLang,
                     targetLang,
                 };
                 setHistory(prevHistory => {
@@ -1049,7 +996,7 @@ const App: React.FC = () => {
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
             showNotification(t('notifications.imageProcessingFailed', { errorMessage }), 'error');
-            setInputText(''); // Clear processing message on error
+            setInputText(''); 
             setIsLoading(false);
         }
     }, [isOfflineModeEnabled, isOfflineModelReady, isOnline, apiKey, modelName, targetLang, sourceLang, showNotification, onlineProvider, openaiApiUrl, t, i18n]);
