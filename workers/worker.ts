@@ -16,10 +16,10 @@
 
 	// Per user request, load the library using importScripts for a classic worker environment.
 	// @ts-ignore
-	self.exports = {};
+	(self as any).exports = {};
 	importScripts("/public/genai_bundle.js"); //Development and Testing;開發測試
 	//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用
-	const { FilesetResolver, LlmInference } = self.exports;
+	const { FilesetResolver, LlmInference } = (self as any).exports;
 
 	const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm";
 

@@ -95,7 +95,7 @@ const audioBufferToWav = (buffer: AudioBuffer): Blob => {
 
 
 const App: React.FC = () => {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const [inputText, setInputText] = useState('');
     const [translatedText, setTranslatedText] = useState('');
     const [sourceLang, setSourceLang] = useState<Language>(LANGUAGES[0]); // Default to Auto Detect
@@ -256,9 +256,10 @@ const App: React.FC = () => {
     }, [t, showNotification, inputText, sourceLang, targetLang]);
     
     useEffect(() => {
-        // Correctly initialize the worker.
-        // It's not a module because it uses importScripts.
-        const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url));
+        //Do not delete this code, trigger the sandbox security mechanism and temporarily comment it out.
+		//禁止刪除該程式碼，觸發沙盒安全機制暫時註解
+        //These need to be set up as type: 'module'.；這邊要設定為type: 'module'
+        const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url),{type: 'module'});
         workerRef.current = worker;
         
         const onMessage = (event: MessageEvent) => messageHandlerRef.current(event);
@@ -450,6 +451,10 @@ const App: React.FC = () => {
         setTranslatedText('');
     
         try {
+            // Get language names in English for the prompt
+            const sourceLangEn = i18n.t(sourceLang.name, { lng: 'en' });
+            const targetLangEn = i18n.t(targetLang.name, { lng: 'en' });
+
             if (isOfflineModeEnabled) {
                 if (!offlineModelName) throw new Error('Please select an offline model in settings.');
                 if (isOfflineModelInitializing) throw new Error('Offline model is still initializing.');
@@ -459,8 +464,8 @@ const App: React.FC = () => {
                     type: 'translate',
                     payload: {
                         text: textToTranslate,
-                        sourceLang: t(sourceLang.name),
-                        targetLang: t(targetLang.name),
+                        sourceLang: sourceLangEn,
+                        targetLang: targetLangEn,
                         sourceLangCode: sourceLang.code,
                         targetLangCode: targetLang.code,
                         isTwoStepEnabled: isTwoStepJpCn,
@@ -478,10 +483,10 @@ const App: React.FC = () => {
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set. Please add it in the settings.");
-                    finalResult = await translateTextOpenAIStream(textToTranslate, t(sourceLang.name), t(targetLang.name), apiKey, modelName, openaiApiUrl, onChunk, controller.signal);
+                    finalResult = await translateTextOpenAIStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, openaiApiUrl, onChunk, controller.signal);
                 } else { // Gemini is default
                     if (!apiKey) throw new Error("Gemini API Key is not set. Please add it in the settings.");
-                    finalResult = await translateTextGeminiStream(textToTranslate, t(sourceLang.name), t(targetLang.name), apiKey, modelName, onChunk, controller.signal);
+                    finalResult = await translateTextGeminiStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, onChunk, controller.signal);
                 }
     
                 const newHistoryItem: TranslationHistoryItem = {
@@ -513,7 +518,7 @@ const App: React.FC = () => {
                 translationAbortControllerRef.current = null;
             }
         }
-    }, [sourceLang, targetLang, apiKey, modelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t]);
+    }, [sourceLang, targetLang, apiKey, modelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t, i18n]);
 
     const handleTranslate = useCallback(() => {
         performTranslate(inputText);
@@ -765,7 +770,7 @@ const App: React.FC = () => {
 
                         workerRef.current?.postMessage({
                             type: 'transcribe',
-                            payload: { audioUrl: wavUrl, sourceLang: t(sourceLang.name) }
+                            payload: { audioUrl: wavUrl, sourceLang: i18n.t(sourceLang.name, { lng: 'en' }) }
                         });
                         // URL will be revoked in the worker message handler.
 
@@ -795,7 +800,7 @@ const App: React.FC = () => {
                 console.error('Error starting offline recording:', err);
             }
         }
-    }, [isRecording, sourceLang, showNotification, t]);
+    }, [isRecording, sourceLang, showNotification, t, i18n]);
 
     // This effect handles the automatic stopping of the recording when the countdown reaches zero.
     useEffect(() => {
@@ -914,7 +919,7 @@ const App: React.FC = () => {
 
                         workerRef.current?.postMessage({
                             type: 'transcribe',
-                            payload: { audioUrl: wavUrl, sourceLang: t(sourceLang.name) }
+                            payload: { audioUrl: wavUrl, sourceLang: i18n.t(sourceLang.name, { lng: 'en' }) }
                         });
                         // After getting the text, immediately translate it.
                         // This requires chaining messages or waiting.
@@ -950,7 +955,7 @@ const App: React.FC = () => {
                 console.error('Error starting offline AST recording:', err);
             }
         }
-    }, [isAstRecording, sourceLang.name, showNotification, performTranslate, t]);
+    }, [isAstRecording, sourceLang.name, showNotification, performTranslate, t, i18n]);
 
     const handleToggleAstRecording = useCallback(() => {
         if (sourceLang.code === 'auto') {
@@ -1013,13 +1018,14 @@ const App: React.FC = () => {
                 if (!isOnline) throw new Error(t('notifications.offlineImageTranslateError'));
                 
                 let result: { sourceText: string, translatedText: string };
+                const targetLangEn = i18n.t(targetLang.name, { lng: 'en' });
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set. Please add it in the settings.");
-                    result = await translateImageOpenAI(imageDataUrl, t(targetLang.name), apiKey, modelName, openaiApiUrl);
+                    result = await translateImageOpenAI(imageDataUrl, targetLangEn, apiKey, modelName, openaiApiUrl);
                 } else { // Gemini
                     if (!apiKey) throw new Error("Gemini API Key is not set. Please add it in the settings.");
-                    result = await translateImageGemini(imageDataUrl, t(targetLang.name), apiKey, modelName);
+                    result = await translateImageGemini(imageDataUrl, targetLangEn, apiKey, modelName);
                 }
                 
                 setInputText(result.sourceText);
@@ -1046,7 +1052,7 @@ const App: React.FC = () => {
             setInputText(''); // Clear processing message on error
             setIsLoading(false);
         }
-    }, [isOfflineModeEnabled, isOfflineModelReady, isOnline, apiKey, modelName, targetLang, sourceLang, showNotification, onlineProvider, openaiApiUrl, t]);
+    }, [isOfflineModeEnabled, isOfflineModelReady, isOnline, apiKey, modelName, targetLang, sourceLang, showNotification, onlineProvider, openaiApiUrl, t, i18n]);
 
     const handleSaveSettings = (
         newApiKey: string, 

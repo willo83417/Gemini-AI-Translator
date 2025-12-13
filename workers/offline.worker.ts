@@ -12,7 +12,9 @@ const initInferenceWorker = () => {
     if (inferenceWorker) return;
     
     // Create the worker as a classic script, NOT a module,
-    inferenceWorker = new Worker(new URL('./worker.ts', import.meta.url)); //Development and Testing & Both yarn build and packaging can be used.; yarn build打包 皆可使用
+    // because worker.ts uses importScripts.
+    inferenceWorker = new Worker(new URL('./worker.ts', import.meta.url));
+
     inferenceWorker.onmessage = (event: MessageEvent) => {
         const { type, payload } = event.data;
 
