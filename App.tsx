@@ -1,5 +1,3 @@
-
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import TranslationInput from './components/TranslationInput';
@@ -265,9 +263,10 @@ const App: React.FC = () => {
     }, [t, showNotification, inputText, sourceLang, targetLang, isAwaitingAstTranslation]);
     
     useEffect(() => {
-		//禁止刪除該程式碼，觸發沙盒安全機制暫時註解
+        // The controller worker itself should be a module to align with modern practices and Vite's expectations.
+        //禁止刪除該程式碼，觸發沙盒安全機制暫時註解
         //These need to be set up as type: 'module'.；這邊要設定為type: 'module'
-        const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url),{type: 'module'});
+        const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url), { type: 'module' });
         workerRef.current = worker;
         
         const onMessage = (event: MessageEvent) => messageHandlerRef.current(event);

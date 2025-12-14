@@ -4,6 +4,8 @@
 	 * Environment Polyfill - MUST be at the very top.
 	 * This spoofs the environment for MediaPipe's internal checks before the script is loaded.
 	 */
+	import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai'; //FIX Identifier 'D' has already been declared
+	 
 	if (typeof (self as any).HTMLImageElement === 'undefined') {
 		(self as any).HTMLImageElement = class HTMLImageElement {};
 	}
@@ -127,10 +129,10 @@
 	}
 
 	// Per user request, load the library using importScripts for a classic worker environment.
-	(self as any).exports = {};
-	importScripts("/public/genai_bundle.js"); //Development and Testing;開發測試
+	//self.exports = {};
+	//importScripts("/public/genai_bundle.js"); //Development and Testing;開發測試
 	//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用
-	const { FilesetResolver, LlmInference } = (self as any).exports;
+	//const { FilesetResolver, LlmInference } = self.exports;
 
 	const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm";
 

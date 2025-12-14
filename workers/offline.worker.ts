@@ -9,16 +9,43 @@ let twoStepState: {
     reject: (reason?: any) => void;
 } | null = null;
 
+// This function attaches the necessary event listeners to the inference worker instance.
+const setupInferenceWorkerListeners = () => {
+    if (!inferenceWorker) return;
+
+    inferenceWorker.onmessage = (e: MessageEvent) => {
+        const { type: msgType, payload: msgPayload } = e.data;
+        if (twoStepState && msgType === 'translation_full_done') {
+            twoStepState.resolve(msgPayload.result);
+            twoStepState = null;
+        } else if (twoStepState && (msgType === 'translation_error' || msgType === 'error')) {
+            twoStepState.reject(new Error(msgPayload.error));
+            twoStepState = null;
+        } else {
+            // Forward all other messages to the main thread
+            self.postMessage(e.data);
+        }
+    };
+    
+    inferenceWorker.onerror = (error) => {
+        const errorMessage = `Inference worker error: ${error.message}`;
+        console.error("Controller received an error from inference worker:", error);
+        if (twoStepState) {
+            twoStepState.reject(new Error(errorMessage));
+            twoStepState = null;
+        }
+        self.postMessage({ type: 'init_error', payload: { error: errorMessage } });
+    };
+};
+
 // This function now handles both creation and message forwarding logic
 const forwardToInferenceWorker = (event: MessageEvent) => {
     if (!inferenceWorker) {
         console.error("Inference worker does not exist. Cannot process message:", event.data.type);
-        // Optionally, send an error back to the main thread
         self.postMessage({ type: 'error', payload: { error: 'Inference worker is not initialized.' } });
         return;
     }
     
-    // For transferable objects like ImageBitmap
     if (event.data.type === 'extractText' && event.data.payload.imageBitmap) {
         inferenceWorker.postMessage(event.data, [event.data.payload.imageBitmap]);
     } else {
@@ -32,7 +59,6 @@ const handleTranslate = async (payload: any) => {
 
     if (isTwoStepEnabled && isJpToCn) {
         try {
-            // Step 1: Japanese to English
             const intermediateEnglishPromise = new Promise((resolve, reject) => {
                 twoStepState = { resolve, reject };
                 if (!inferenceWorker) throw new Error("Inference worker not available for two-step translation.");
@@ -41,27 +67,19 @@ const handleTranslate = async (payload: any) => {
                     payload: { text, sourceLang: 'Japanese', targetLang: 'English' }
                 });
             });
-
             const intermediateEnglish = await intermediateEnglishPromise as string;
-
-            if (!intermediateEnglish?.trim()) {
-                throw new Error('Intermediate English translation failed.');
-            }
-
-            // Step 2: English to Chinese
+            if (!intermediateEnglish?.trim()) throw new Error('Intermediate English translation failed.');
             if (!inferenceWorker) throw new Error("Inference worker not available for second step of translation.");
             inferenceWorker.postMessage({
                 type: 'translate_stream',
                 payload: { text: intermediateEnglish, sourceLang: 'English', targetLang }
             });
-
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Two-step translation failed.';
             self.postMessage({ type: 'translation_error', payload: { error: errorMessage } });
             twoStepState = null;
         }
     } else {
-        // Standard one-step translation
         if (!inferenceWorker) {
              self.postMessage({ type: 'translation_error', payload: { error: "Inference worker not ready." } });
              return;
@@ -85,47 +103,23 @@ self.onmessage = async (event: MessageEvent) => {
 
     switch (type) {
         case 'init':
-            // Terminate any existing worker to ensure a clean slate
-            if (inferenceWorker) {
-                inferenceWorker.terminate();
+            // The worker is created on-demand here ("lazy initialization").
+            // This block handles both the initial creation and re-creation after an 'unload' command.
+            if (!inferenceWorker) {
+                console.log('Controller: Creating inference worker...');
+                // Use the `?url` suffix to tell Vite to provide the asset URL instead of bundling.
+                inferenceWorker = new Worker(new URL('./worker.ts?url', import.meta.url), { type: 'classic' });
+                setupInferenceWorkerListeners();
             }
-            // Create the worker as a classic script, NOT a module, because worker.ts uses importScripts.
-            inferenceWorker = new Worker(new URL('./worker.ts', import.meta.url));
-
-            inferenceWorker.onmessage = (e: MessageEvent) => {
-                const { type: msgType, payload: msgPayload } = e.data;
-                if (twoStepState && msgType === 'translation_full_done') {
-                    twoStepState.resolve(msgPayload.result);
-                    twoStepState = null;
-                } else if (twoStepState && (msgType === 'translation_error' || msgType === 'error')) {
-                    twoStepState.reject(new Error(msgPayload.error));
-                    twoStepState = null;
-                } else {
-                    // Forward all other messages to the main thread
-                    self.postMessage(e.data);
-                }
-            };
-            
-            inferenceWorker.onerror = (error) => {
-                const errorMessage = `Inference worker error: ${error.message}`;
-                if (twoStepState) {
-                    twoStepState.reject(new Error(errorMessage));
-                    twoStepState = null;
-                }
-                self.postMessage({ type: 'init_error', payload: { error: errorMessage } });
-            };
-            
-            // Forward the init message to the newly created worker
             forwardToInferenceWorker(event);
             break;
 
         case 'unload':
             if (inferenceWorker) {
+                console.log('Controller: Received unload command. Terminating inference worker to release VRAM.');
                 inferenceWorker.terminate();
-                inferenceWorker = null;
-                console.log('Inference worker terminated and resources released.');
+                inferenceWorker = null; // CRITICAL: Set to null to release reference and allow re-creation.
             }
-            // Confirm to main thread that unload is complete
             self.postMessage({ type: 'unload_done' });
             break;
 
