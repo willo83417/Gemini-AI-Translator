@@ -4,7 +4,11 @@
 	 * Environment Polyfill - MUST be at the very top.
 	 * This spoofs the environment for MediaPipe's internal checks before the script is loaded.
 	 */
-	import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai'; //FIX Identifier 'D' has already been declared
+	self.exports = {};
+	//importScripts("/public/genai_bundle.js");//Development and Testing
+	//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用(Backup-2)
+	//const { FilesetResolver, LlmInference } = self.exports;
+	import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai'; //yarn build is used for packaging.; yarn build 打包用?
 	 
 	if (typeof (self as any).HTMLImageElement === 'undefined') {
 		(self as any).HTMLImageElement = class HTMLImageElement {};
