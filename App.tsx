@@ -262,7 +262,7 @@ const App: React.FC = () => {
         };
     }, [t, showNotification, inputText, sourceLang, targetLang, isAwaitingAstTranslation]);
     
-    useEffect(() => {
+   /* useEffect(() => {
         // The controller worker itself should be a module to align with modern practices and Vite's expectations.
         //禁止刪除該程式碼，觸發沙盒安全機制暫時註解
         //These need to be set up as type: 'module'.；這邊要設定為type: 'module'
@@ -284,7 +284,7 @@ const App: React.FC = () => {
             worker.terminate();
             workerRef.current = null;
         };
-    }, [showNotification]);
+    }, [showNotification]);*/
 
 
     useEffect(() => {

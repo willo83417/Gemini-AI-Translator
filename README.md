@@ -1,3 +1,12 @@
+<div align="center">
+<img width="1200" height="300" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
+
+English | [中文](./README_zh.md) |
+
+
+  
+
 # Gemini AI Translator
 
 This is a modern translation application powered by the Google Gemini API. It provides a clean, mobile-first user interface for fast and accurate text, voice, and image translation between multiple languages, and supports both online and offline modes.  
@@ -9,30 +18,30 @@ This is a modern translation application powered by the Google Gemini API. It pr
   <table>
     <tr>
       <td align="center">
-        <img src="screenshots/P1.png" width="200" alt="Screenshot 1"/>
+        <img src="https://github.com/willo83417/Gemini-AI-Translator/blob/gh-pages/screenshots/P1.png" width="200" alt="Screenshot 1"/>
       </td>
       <td align="center">
-        <img src="screenshots/P2.png" width="200" alt="Screenshot 2"/>
+        <img src="https://github.com/willo83417/Gemini-AI-Translator/blob/gh-pages/screenshots/P2.png" width="200" alt="Screenshot 2"/>
       </td>
       <td align="center">
-        <img src="screenshots/P3.png" width="200" alt="Screenshot 3"/>
+        <img src="https://github.com/willo83417/Gemini-AI-Translator/blob/gh-pages/screenshots/P3.png" width="200" alt="Screenshot 3"/>
       </td>
       <td align="center">
-        <img src="screenshots/P4.png" width="200" alt="Screenshot 4"/>
+        <img src="https://github.com/willo83417/Gemini-AI-Translator/blob/gh-pages/screenshots/P4.png" width="200" alt="Screenshot 4"/>
       </td>
     </tr>
     <tr>
       <td align="center">
-        <img src="screenshots/P5.png" width="200" alt="Screenshot 5"/>
+        <img src="https://github.com/willo83417/Gemini-AI-Translator/blob/gh-pages/screenshots/P5.png" width="200" alt="Screenshot 5"/>
       </td>
       <td align="center">
-        <img src="screenshots/P6.png" width="200" alt="Screenshot 6"/>
+        <img src="https://github.com/willo83417/Gemini-AI-Translator/blob/gh-pages/screenshots/P6.png" width="200" alt="Screenshot 6"/>
       </td>
       <td align="center">
-        <img src="screenshots/P7.png" width="200" alt="Screenshot 7"/>
+        <img src="https://github.com/willo83417/Gemini-AI-Translator/blob/gh-pages/screenshots/P7.png" width="200" alt="Screenshot 7"/>
       </td>
       <td align="center">
-        <img src="screenshots/P8.png" width="200" alt="Screenshot 8"/>
+        <img src="https://github.com/willo83417/Gemini-AI-Translator/blob/gh-pages/screenshots/P8.png" width="200" alt="Screenshot 8"/>
       </td>
     </tr>
   </table>
@@ -132,3 +141,35 @@ The main interface is divided into two blocks, one for input and one for output.
 - **Internationalization**: i18next
 
 ## Notes⚠️
+## GitHub Pages settings  
+1. Modify package.json
+   ```
+   "homepage": "https://<your-github-username>.github.io/repository name", ← Add this
+   "deploy": "gh-pages -d dist", ← Add this  
+   ```
+2. Modify vite.config.ts
+   ```
+   base: '/repository name/', // ← Add this
+   plugins: [],
+   ```
+   ```
+           icons: [
+          {
+            "src": "images/icon-192.png", ←Modify "images/icon-192.png" not "/images/icon-192.png"
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+          },
+          {
+            "src": "images/icon-512.png", ←Modify "images/icon-512.png" not "/images/icon-512.png"
+            "sizes": "512x512",
+            "type": "image/png"
+          }
+        ]
+   ```
+3. Install gh-pages  
+   `npm install gh-pages --save-dev` or `yarn add gh-pages -D`  
+4. Output static website files  
+   `npm build` or `yarn build`
+5. Run to GitHub Pages  
+    `npm run deploy` or `yarn run deploy`
