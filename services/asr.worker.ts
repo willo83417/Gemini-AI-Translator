@@ -92,6 +92,7 @@ class Transcriber {
             let fullTranscription = "";
 
             // Use TextStreamer to capture partial results.
+            // We accumulate the chunks locally because App.tsx replaces the input text entirely.
             const streamer = new TextStreamer(tokenizer, {
                 skip_prompt: true,
                 skip_special_tokens: true,

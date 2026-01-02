@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -19,6 +18,17 @@
         height: 100%;
       }
     </style>
+    <script>
+    // Pre-configure onnxruntime-web to force single-threaded execution.
+    // This is necessary to prevent "SharedArrayBuffer is not defined" errors
+    // in environments that are not cross-origin isolated.
+    window.ortConfig = {
+      wasm: {
+        numThreads: 1,
+        wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/'
+      }
+    };
+  </script>
 <script type="importmap">
 {
   "imports": {
@@ -37,7 +47,9 @@
     "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1",
     "react-webcam": "https://aistudiocdn.com/react-webcam@^7.2.0",
     "path": "https://aistudiocdn.com/path@^0.12.7",
-    "url": "https://aistudiocdn.com/url@^0.11.4"
+    "url": "https://aistudiocdn.com/url@^0.11.4",
+    "esearch-ocr": "https://aistudiocdn.com/esearch-ocr@^8.5.0",
+    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/ort.all.min.js"
   }
 }
 </script>

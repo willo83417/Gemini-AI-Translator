@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import TranslationInput from './components/TranslationInput';
@@ -11,8 +10,9 @@ import { translateTextStream as translateTextOpenAIStream, translateImage as tra
 import { downloadManager, type DownloadProgress } from './services/downloadManager';
 import { processAudioForTranscription, checkAsrModelCacheStatus, clearAsrCache } from './services/asrService';
 import { useWebSpeech } from './hooks/useWebSpeech';
-import type { Language, TranslationHistoryItem, CustomOfflineModel } from './types';
-import { LANGUAGES, OFFLINE_MODELS, ASR_MODELS } from './constants';
+import { usePaddleOcr } from './hooks/usePaddleOcr';
+import type { Language, TranslationHistoryItem, CustomOfflineModel, EsearchOCROutput, EsearchOCRItem } from './types';
+import { LANGUAGES, OFFLINE_MODELS, ASR_MODELS, OCR_MODELS } from './constants';
 
 interface SpeechRecognition {
     continuous: boolean;
@@ -95,6 +95,106 @@ const audioBufferToWav = (buffer: AudioBuffer): Blob => {
     return new Blob([view], { type: 'audio/wav' });
 };
 
+// --- OCR Processing Logic ---
+type ProcessedItem = EsearchOCRItem & {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    centerX: number;
+    centerY: number;
+    height: number;
+};
+
+const enhanceItem = (item: EsearchOCRItem): ProcessedItem => {
+    const xs = item.box.map(p => p[0]);
+    const ys = item.box.map(p => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    return { ...item, minX, maxX, minY, maxY, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2, height: maxY - minY };
+};
+
+const groupAndSortLines = (items: ProcessedItem[]) => {
+    const lines: ProcessedItem[][] = [];
+    items.sort((a, b) => a.centerY - b.centerY);
+    items.forEach(item => {
+        const line = lines.find(l => {
+            const avgY = l.reduce((acc, i) => acc + i.centerY, 0) / l.length;
+            const avgH = l.reduce((acc, i) => acc + i.height, 0) / l.length;
+            return Math.abs(item.centerY - avgY) < (avgH * 0.6);
+        });
+        if (line) {
+            line.push(item);
+        } else {
+            lines.push([item]);
+        }
+    });
+    lines.sort((a, b) => {
+        const getLineTopY = (l: ProcessedItem[]) => Math.min(...l.map(i => i.minY));
+        return getLineTopY(a) - getLineTopY(b);
+    });
+    return lines.map(line => {
+        line.sort((a, b) => a.minX - b.minX);
+        return line.map(i => i.text).join(' ');
+    }).join('\n');
+};
+
+const detectAndSplitColumns = (rawItems: EsearchOCRItem[]): string => {
+    if (!rawItems || rawItems.length === 0) return "";
+    const items = rawItems.map(enhanceItem);
+    if (items.length < 2) return groupAndSortLines(items);
+    const minX = Math.min(...items.map(i => i.minX));
+    const maxX = Math.max(...items.map(i => i.maxX));
+    const width = maxX - minX;
+    const coverage = new Int32Array(Math.ceil(width) + 1);
+    items.forEach(item => {
+        const start = Math.floor(item.minX - minX);
+        const end = Math.ceil(item.maxX - minX);
+        for (let i = start; i < end; i++) {
+            if (i >= 0 && i < coverage.length) coverage[i]++;
+        }
+    });
+    const searchStart = Math.floor(width * 0.25);
+    const searchEnd = Math.floor(width * 0.75);
+    let maxGapSize = 0, maxGapCenter = -1, currentGapStart = -1;
+    for (let i = searchStart; i <= searchEnd; i++) {
+        if (coverage[i] === 0) {
+            if (currentGapStart === -1) currentGapStart = i;
+        } else {
+            if (currentGapStart !== -1) {
+                const gapSize = i - currentGapStart;
+                if (gapSize > maxGapSize) {
+                    maxGapSize = gapSize;
+                    maxGapCenter = currentGapStart + (gapSize / 2);
+                }
+                currentGapStart = -1;
+            }
+        }
+    }
+    const hasMultipleColumns = maxGapCenter !== -1 && maxGapSize > 10;
+    if (hasMultipleColumns) {
+        const splitX = minX + maxGapCenter;
+        const leftItems = items.filter(i => i.centerX < splitX);
+        const rightItems = items.filter(i => i.centerX >= splitX);
+        const leftText = groupAndSortLines(leftItems);
+        const rightText = groupAndSortLines(rightItems);
+        return `${leftText}\n\n${rightText}`;
+    }
+    return groupAndSortLines(items);
+};
+
+const processOcrResult = (result: EsearchOCROutput) => {
+    const rawItems = result.src;
+    if (!rawItems || rawItems.length === 0) {
+        return result.parragraphs?.map(p => p.text).join('\n') || "";
+    }
+    return detectAndSplitColumns(rawItems);
+};
+// --- END OCR ---
+
+
 interface AppMessage {
     type: 'log' | 'transcription' | 'transcription-partial' | 'loaded' | 'error' | 'progress' | 'unloaded';
     payload: any;
@@ -152,7 +252,7 @@ const App: React.FC = () => {
     const [offlineTemperature, setOfflineTemperature] = useState(0.3);
     const [offlineRandomSeed, setOfflineRandomSeed] = useState(101);
     const [offlineSupportAudio, setOfflineSupportAudio] = useState(false);
-    const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(1);
+    const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(0);
 
     // ASR State
     const [isWebSpeechApiEnabled, setIsWebSpeechApiEnabled] = useState(true);
@@ -168,6 +268,10 @@ const App: React.FC = () => {
     // Offline recording countdown state
     const [recordingCountdown, setRecordingCountdown] = useState<number | null>(null);
     const [isAwaitingAstTranslation, setIsAwaitingAstTranslation] = useState(false);
+
+    // OCR State
+    const { status: ocrEngineStatus, error: ocrEngineError, recognize, initializeOcr } = usePaddleOcr();
+    const [selectedOcrModel, setSelectedOcrModel] = useState<keyof typeof OCR_MODELS>('ch_v5');
 
 
     type NotificationType = 'error' | 'success' | 'info';
@@ -531,6 +635,11 @@ const App: React.FC = () => {
 
         const savedCustomModels = localStorage.getItem('custom-offline-models');
         if (savedCustomModels) setCustomModels(JSON.parse(savedCustomModels));
+
+        const savedOcrModel = localStorage.getItem('selected-ocr-model');
+        if (savedOcrModel && Object.prototype.hasOwnProperty.call(OCR_MODELS, savedOcrModel)) {
+            setSelectedOcrModel(savedOcrModel as keyof typeof OCR_MODELS);
+        }
 
         try {
             const savedHistory = localStorage.getItem('translation-history');
@@ -1103,50 +1212,68 @@ const App: React.FC = () => {
         setIsLoading(true);
         setInputText(t('notifications.processingImage'));
         setTranslatedText('');
-
+    
         try {
+            // Priority 1: Use local OCR if it's initialized and ready.
+            if (ocrEngineStatus === 'ready') {
+                const image = new Image();
+                image.src = imageDataUrl;
+                await new Promise<void>((resolve, reject) => {
+                    image.onload = () => resolve();
+                    image.onerror = (e) => reject(e);
+                });
+    
+                const recognitionData = await recognize(image);
+                if (!recognitionData) {
+                    throw new Error('OCR recognition returned no data.');
+                }
+                const extractedText = processOcrResult(recognitionData.result);
+                setInputText(extractedText);
+    
+                if (extractedText.trim()) {
+                    await performTranslate(extractedText);
+                } else {
+                    showNotification(t('notifications.noTextInImage'), 'info');
+                    setTranslatedText('');
+                    setIsLoading(false);
+                }
+                return;
+            }
+    
+            // Fallback to other methods
             if (isOfflineModeEnabled) {
-                if (!isOfflineModelReady) throw new Error(t('notifications.offlineImageError'));
-                
+                if (!isOfflineModelReady || offlineMaxNumImages < 1) {
+                    throw new Error(t('notifications.offlineImageError'));
+                }
                 const imageBitmap = await new Promise<ImageBitmap>((resolve, reject) => {
                     const img = new Image();
-                    img.onload = () => {
-                        createImageBitmap(img).then(resolve).catch(reject);
-                    };
-                    img.onerror = () => reject(new Error('Failed to load image for bitmap creation.'));
+                    img.onload = () => createImageBitmap(img).then(resolve).catch(reject);
+                    img.onerror = () => reject(new Error('Failed to load image for bitmap.'));
                     img.src = imageDataUrl;
                 });
-
+    
                 const worker = getOrCreateWorker();
-                worker.postMessage({
-                    type: 'extractText',
-                    payload: { imageBitmap }
-                }, [imageBitmap]);
-
-
+                worker.postMessage({ type: 'extractText', payload: { imageBitmap } }, [imageBitmap]);
+    
             } else { // Online mode
                 if (!isOnline) throw new Error(t('notifications.offlineImageTranslateError'));
                 
                 let result: { sourceText: string, translatedText: string };
                 const targetLangEn = i18n.t(targetLang.name, { lng: 'en' });
                 if (onlineProvider === 'openai') {
-                    if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
-                    if (!openaiApiUrl) throw new Error("OpenAI API URL is not set. Please add it in the settings.");
+                    if (!apiKey) throw new Error("OpenAI API Key is not set.");
+                    if (!openaiApiUrl) throw new Error("OpenAI API URL is not set.");
                     result = await translateImageOpenAI(imageDataUrl, targetLangEn, apiKey, modelName, openaiApiUrl);
-                } else { // Gemini
-                    if (!apiKey) throw new Error("Gemini API Key is not set. Please add it in the settings.");
+                } else {
+                    if (!apiKey) throw new Error("Gemini API Key is not set.");
                     result = await translateImageGemini(imageDataUrl, targetLangEn, apiKey, modelName);
                 }
                 
                 setInputText(result.sourceText);
                 setTranslatedText(result.translatedText);
-
+    
                 const newHistoryItem: TranslationHistoryItem = {
-                    id: Date.now(),
-                    inputText: result.sourceText,
-                    translatedText: result.translatedText,
-                    sourceLang,
-                    targetLang,
+                    id: Date.now(), inputText: result.sourceText, translatedText: result.translatedText, sourceLang, targetLang,
                 };
                 setHistory(prevHistory => {
                     const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
@@ -1161,7 +1288,7 @@ const App: React.FC = () => {
             setInputText(''); 
             setIsLoading(false);
         }
-    }, [isOfflineModeEnabled, isOfflineModelReady, isOnline, apiKey, modelName, targetLang, sourceLang, showNotification, onlineProvider, openaiApiUrl, t, i18n, getOrCreateWorker]);
+    }, [isOfflineModeEnabled, isOfflineModelReady, offlineMaxNumImages, isOnline, apiKey, modelName, targetLang, sourceLang, showNotification, onlineProvider, openaiApiUrl, t, i18n, getOrCreateWorker, ocrEngineStatus, recognize, performTranslate]);
 
     const handleSaveSettings = (
         newApiKey: string, 
@@ -1187,6 +1314,7 @@ const App: React.FC = () => {
         newOfflineMaxNumImages: number,
         newIsNoiseCancellationEnabled: boolean,
         newAudioGainValue: number,
+        newSelectedOcrModel: keyof typeof OCR_MODELS,
     ) => {
         setApiKey(newApiKey);
         setModelName(newModelName);
@@ -1211,6 +1339,7 @@ const App: React.FC = () => {
         setOfflineMaxNumImages(newOfflineMaxNumImages);
         setIsNoiseCancellationEnabled(newIsNoiseCancellationEnabled);
         setAudioGainValue(newAudioGainValue);
+        setSelectedOcrModel(newSelectedOcrModel);
         
         localStorage.setItem('api-key', newApiKey);
         localStorage.setItem('model-name', newModelName);
@@ -1235,6 +1364,7 @@ const App: React.FC = () => {
         localStorage.setItem('offline-max-num-images', JSON.stringify(newOfflineMaxNumImages));
         localStorage.setItem('is-noise-cancellation-enabled', JSON.stringify(newIsNoiseCancellationEnabled));
         localStorage.setItem('audio-gain-value', JSON.stringify(newAudioGainValue));
+        localStorage.setItem('selected-ocr-model', newSelectedOcrModel);
     };
 
     const handleSelectHistory = (item: TranslationHistoryItem) => {
@@ -1336,7 +1466,7 @@ const App: React.FC = () => {
                         setInputText={setInputText}
                         sourceLang={sourceLang}
                         setSourceLang={setSourceLang}
-                        isLoading={isLoading || isOfflineModelInitializing || isAsrInitializing}
+                        isLoading={isLoading || isOfflineModelInitializing || isAsrInitializing || ocrEngineStatus === 'initializing'}
                         onTranslate={handleTranslate}
                         onCancel={handleCancelTranslation}
                         isRecording={isRecording}
@@ -1405,6 +1535,11 @@ const App: React.FC = () => {
                 asrLoadingProgress={asrLoadingProgress}
                 onDownloadAsrModel={handleDownloadAsrModel}
                 onClearAsrCache={handleClearAsrCache}
+                // OCR Props
+                ocrEngineStatus={ocrEngineStatus}
+                ocrEngineError={ocrEngineError}
+                onInitializeOcr={initializeOcr}
+                currentSelectedOcrModel={selectedOcrModel}
             />
 
             <HistoryModal

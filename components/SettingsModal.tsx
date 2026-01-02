@@ -1,10 +1,11 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { XIcon, TrashIcon } from './icons';
 import { DownloadProgress } from '../services/downloadManager';
-import { OFFLINE_MODELS, ASR_MODELS } from '../constants';
-import type { Language } from '../types';
+import { OFFLINE_MODELS, ASR_MODELS, OCR_MODELS } from '../constants';
+import type { Language, OcrEngineStatus, OcrModelConfig } from '../types';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -32,7 +33,8 @@ interface SettingsModalProps {
         offlineSupportAudio: boolean,
         offlineMaxNumImages: number,
         isNoiseCancellationEnabled: boolean,
-        audioGainValue: number
+        audioGainValue: number,
+        selectedOcrModel: keyof typeof OCR_MODELS
     ) => void;
     currentApiKey: string;
     currentModelName: string;
@@ -71,6 +73,11 @@ interface SettingsModalProps {
     asrLoadingProgress: { file: string; progress: number };
     onDownloadAsrModel: (modelId: string) => void;
     onClearAsrCache: () => void;
+    // OCR Props
+    ocrEngineStatus: OcrEngineStatus;
+    ocrEngineError: string | null;
+    onInitializeOcr: (modelConfig: OcrModelConfig) => Promise<void>;
+    currentSelectedOcrModel: keyof typeof OCR_MODELS;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
@@ -113,6 +120,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     asrLoadingProgress,
     onDownloadAsrModel,
     onClearAsrCache,
+    ocrEngineStatus,
+    ocrEngineError,
+    onInitializeOcr,
+    currentSelectedOcrModel,
 }) => {
     const { t, i18n } = useTranslation();
     const [activeTab, setActiveTab] = useState('online');
@@ -148,6 +159,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [offlineRandomSeed, setOfflineRandomSeed] = useState(currentOfflineRandomSeed);
     const [offlineSupportAudio, setOfflineSupportAudio] = useState(currentOfflineSupportAudio);
     const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(currentOfflineMaxNumImages);
+    
+    // OCR State
+    const [selectedOcrModel, setSelectedOcrModel] = useState(currentSelectedOcrModel);
 
     useEffect(() => {
         if (isOpen) {
@@ -180,6 +194,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             setAsrModelId(currentAsrModelId);
             setIsNoiseCancellationEnabled(currentIsNoiseCancellationEnabled);
             setAudioGainValue(currentAudioGainValue);
+            
+            // OCR
+            setSelectedOcrModel(currentSelectedOcrModel);
         }
     }, [
         isOpen, currentApiKey, currentModelName, currentOnlineProvider, currentOpenaiApiUrl, 
@@ -188,7 +205,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         currentOfflineTtsRate, currentOfflineTtsPitch, currentOfflineMaxTokens, currentOfflineTopK, 
         currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, 
         currentOfflineMaxNumImages, currentIsOfflineAsrEnabled, currentIsWebSpeechApiEnabled,
-        currentAsrModelId, currentIsNoiseCancellationEnabled, currentAudioGainValue
+        currentAsrModelId, currentIsNoiseCancellationEnabled, currentAudioGainValue, currentSelectedOcrModel
     ]);
     
     useEffect(() => {
@@ -208,7 +225,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             apiKey, modelName, huggingFaceApiKey, offlineModelName, asrModelId, isOfflineEnabled, isOfflineAsrEnabled, isWebSpeechApiEnabled, onlineProvider, openaiApiUrl,
             isOfflineTtsEnabled, offlineTtsVoiceURI, offlineTtsRate, offlineTtsPitch, isTwoStepJpCnEnabled,
             offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages,
-            isNoiseCancellationEnabled, audioGainValue
+            isNoiseCancellationEnabled, audioGainValue, selectedOcrModel
         );
         onClose();
     };
@@ -231,7 +248,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setOfflineTemperature(0.3);
         setOfflineRandomSeed(101);
         setOfflineSupportAudio(false);
-        setOfflineMaxNumImages(1);
+        setOfflineMaxNumImages(0);
+        setSelectedOcrModel('ch_v5');
         
         // Clear ASR
         setIsOfflineAsrEnabled(false);
@@ -242,7 +260,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onClearAsrCache();
 
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
-        onSave('', 'gemini-2.5-flash', '', '', ASR_MODELS[0].id, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 101, false, 1, false, 1.0);
+        onSave('', 'gemini-2.5-flash', '', '', ASR_MODELS[0].id, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 101, false, 0, false, 1.0, 'ch_v5');
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,6 +269,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const handleAsrModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         setAsrModelId(e.target.value);
+    };
+    
+    const handleLoadOcrModel = async () => {
+        const modelConfig = {
+            key: selectedOcrModel,
+            ...OCR_MODELS[selectedOcrModel].paths,
+        };
+        await onInitializeOcr(modelConfig);
     };
 
     const TabButton: React.FC<{tabName: string; label: string}> = ({tabName, label}) => (
@@ -415,6 +441,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                        <TabButton tabName="speech" label={t('settings.tabSpeech')} />
                        <TabButton tabName="tts" label={t('settings.tabTts')} />
                        <TabButton tabName="offline-params" label={t('settings.tabOfflineParams')} />
+                       <TabButton tabName="ocr" label={t('settings.tabOcr')} />
                     </nav>
                 </div>
 
@@ -635,16 +662,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                     if (enabled) {
                                         // Disable Whisper to prevent conflict
                                         setIsOfflineAsrEnabled(false);
-                                        // Suggest enabling offline mode if not already
-                                        if (!isOfflineEnabled) {
-                                            // Optional: setIsOfflineEnabled(true); 
-                                            // But maybe better to just warn or let user handle main toggle
-                                        }
                                     }
                                 }} 
                                 title={t('settings.enableGemmaAudioLabel')} 
                                 description={t('settings.enableGemmaAudioDescription')} 
-                                disabled={!isOfflineEnabled} // Only allow if offline mode is on, or allow but it won't work
+                                disabled={!isOfflineEnabled}
                             />
                             {!isOfflineEnabled && (
                                 <p className="text-xs text-amber-600 mt-1 ml-1">
@@ -705,6 +727,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
 
                             <ToggleSwitch id="max-num-images-toggle" isEnabled={offlineMaxNumImages === 1} setIsEnabled={(enabled) => setOfflineMaxNumImages(enabled ? 1 : 0)} title={t('settings.maxNumImagesLabel')} description={t('settings.maxNumImagesDescription')} />
+                        </div>
+                    )}
+                    {activeTab === 'ocr' && (
+                        <div role="tabpanel" id="ocr-settings" aria-labelledby="ocr-tab" className="space-y-6">
+                             <div>
+                                <label htmlFor="ocr-model-select" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.ocrModelLabel')}</label>
+                                <select 
+                                    id="ocr-model-select"
+                                    value={selectedOcrModel} 
+                                    onChange={(e) => setSelectedOcrModel(e.target.value as any)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    {Object.entries(OCR_MODELS).map(([k, m]) => <option key={k} value={k}>{m.description}</option>)}
+                                </select>
+                            </div>
+                            <button 
+                                onClick={handleLoadOcrModel}
+                                disabled={ocrEngineStatus === 'initializing'}
+                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-sm font-medium transition disabled:bg-indigo-300 disabled:cursor-wait"
+                            >
+                                {ocrEngineStatus === 'initializing' 
+                                    ? t('common.status.initializing')
+                                    : (ocrEngineStatus === 'ready' ? t('settings.switchOcr') : t('settings.initializeOcr'))
+                                }
+                            </button>
+                             {ocrEngineStatus === 'ready' && <p className="text-sm text-center text-green-600">OCR Engine Ready.</p>}
+                             {ocrEngineStatus === 'error' && <p className="text-sm text-center text-red-600">OCR Engine failed to initialize: {ocrEngineError}</p>}
                         </div>
                     )}
                 </div>

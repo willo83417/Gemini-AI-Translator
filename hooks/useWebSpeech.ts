@@ -9,10 +9,14 @@ interface UseWebSpeechOptions {
 }
 
 // Check for vendor-prefixed versions of the API
+// FIX: Use `(window as any)` to safely access SpeechRecognition and webkitSpeechRecognition,
+// which may not be present in the default TypeScript `Window` type.
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
 export const useWebSpeech = ({ onResult, onError, onStart, onEnd }: UseWebSpeechOptions) => {
     const [isListening, setIsListening] = useState(false);
+    // FIX: The `SpeechRecognition` constant is a value (the constructor), not a type.
+    // Use `any` as the type for the ref since the specific type is not available.
     const recognitionRef = useRef<any | null>(null);
     // Ref to control automatic restarting. If true, onend will try to restart.
     // If false (e.g., user clicked stop or an error occurred), it will not.

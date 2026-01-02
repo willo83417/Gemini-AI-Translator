@@ -147,7 +147,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
                     ref={webcamRef}
                     audio={false}
                     screenshotFormat="image/jpeg"
-                    screenshotQuality={0.92}
+                    screenshotQuality={1}
                     videoConstraints={videoConstraints}
                     onUserMedia={handleUserMedia}
                     onUserMediaError={(err) => setError(t('camera.errorAccess'))}
