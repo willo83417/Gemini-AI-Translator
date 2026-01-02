@@ -2,6 +2,7 @@
 export interface Language {
     code: string;
     name: string;
+    asrCode?: string;
 }
 
 export interface TranslationHistoryItem {
@@ -10,4 +11,18 @@ export interface TranslationHistoryItem {
     translatedText: string;
     sourceLang: Language;
     targetLang: Language;
+}
+
+export interface AsrModel {
+    id: string;
+    name: string;
+    quantization: Record<string, string>;
+    size: string;
+}
+
+export interface CustomOfflineModel {
+    name: string;
+    value: string;
+    url?: string;
+    size?: string;
 }

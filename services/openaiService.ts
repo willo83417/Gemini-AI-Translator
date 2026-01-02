@@ -1,3 +1,4 @@
+
 // services/openaiService.ts
 
 export const translateTextStream = async (
@@ -174,5 +175,56 @@ export const translateImage = async (
             throw error;
         }
         throw new Error('OpenAI API request for image translation failed.');
+    }
+};
+
+export const transcribeAudioOpenAI = async (
+    audioBlob: Blob,
+    langCode: string,
+    apiKey: string,
+    apiUrl: string,
+    signal?: AbortSignal
+): Promise<string> => {
+    if (!apiKey) throw new Error('OpenAI API Key is not set.');
+    if (!apiUrl) throw new Error('OpenAI API URL is not set.');
+
+    const formData = new FormData();
+    // OpenAI Whisper API expects a file. 
+    // We add a filename with a reasonable extension based on the blob type.
+    const extension = audioBlob.type.includes('wav') ? 'wav' : 'webm';
+    formData.append('file', audioBlob, `recording.${extension}`);
+    formData.append('model', 'whisper-1');
+    
+    // Only add language if it is not 'auto'
+    if (langCode && langCode !== 'auto') {
+        formData.append('language', langCode);
+    }
+
+    try {
+        const response = await fetch(`${apiUrl}/v1/audio/transcriptions`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: formData,
+            signal
+        });
+
+        if (!response.ok) {
+            if (signal?.aborted) {
+                throw new DOMException('Request aborted by user', 'AbortError');
+            }
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || `OpenAI API audio request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.text || '';
+    } catch (error) {
+        console.error('Error transcribing audio with OpenAI:', error);
+        if (error instanceof Error && error.name === 'AbortError') {
+            throw error;
+        }
+        throw new Error('OpenAI API request for audio transcription failed.');
     }
 };

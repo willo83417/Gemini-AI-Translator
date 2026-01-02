@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { XIcon, TrashIcon } from './icons';
 import { DownloadProgress } from '../services/downloadManager';
-import { OFFLINE_MODELS } from '../constants';
+import { OFFLINE_MODELS, ASR_MODELS } from '../constants';
 import type { Language } from '../types';
 
 interface SettingsModalProps {
@@ -13,7 +14,10 @@ interface SettingsModalProps {
         modelName: string, 
         huggingFaceApiKey: string, 
         offlineModelName: string, 
+        asrModelId: string,
         isOfflineEnabled: boolean,
+        isOfflineAsrEnabled: boolean,
+        isWebSpeechApiEnabled: boolean,
         onlineProvider: string,
         openaiApiUrl: string,
         isOfflineTtsEnabled: boolean,
@@ -26,7 +30,9 @@ interface SettingsModalProps {
         offlineTemperature: number,
         offlineRandomSeed: number,
         offlineSupportAudio: boolean,
-        offlineMaxNumImages: number
+        offlineMaxNumImages: number,
+        isNoiseCancellationEnabled: boolean,
+        audioGainValue: number
     ) => void;
     currentApiKey: string;
     currentModelName: string;
@@ -54,6 +60,17 @@ interface SettingsModalProps {
     currentOfflineRandomSeed: number;
     currentOfflineSupportAudio: boolean;
     currentOfflineMaxNumImages: number;
+    // ASR Props
+    currentIsOfflineAsrEnabled: boolean;
+    currentIsWebSpeechApiEnabled: boolean;
+    currentAsrModelId: string;
+    currentIsNoiseCancellationEnabled: boolean;
+    currentAudioGainValue: number;
+    asrModelsCacheStatus: Record<string, boolean>;
+    isAsrInitializing: boolean;
+    asrLoadingProgress: { file: string; progress: number };
+    onDownloadAsrModel: (modelId: string) => void;
+    onClearAsrCache: () => void;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
@@ -86,9 +103,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     currentOfflineRandomSeed,
     currentOfflineSupportAudio,
     currentOfflineMaxNumImages,
+    currentIsOfflineAsrEnabled,
+    currentIsWebSpeechApiEnabled,
+    currentAsrModelId,
+    currentIsNoiseCancellationEnabled,
+    currentAudioGainValue,
+    asrModelsCacheStatus,
+    isAsrInitializing,
+    asrLoadingProgress,
+    onDownloadAsrModel,
+    onClearAsrCache,
 }) => {
     const { t, i18n } = useTranslation();
     const [activeTab, setActiveTab] = useState('online');
+    
+    // Main Settings
     const [apiKey, setApiKey] = useState(currentApiKey);
     const [modelName, setModelName] = useState(currentModelName);
     const [onlineProvider, setOnlineProvider] = useState(currentOnlineProvider);
@@ -97,6 +126,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [offlineModelName, setOfflineModelName] = useState(currentOfflineModelName);
     const [isOfflineEnabled, setIsOfflineEnabled] = useState(currentIsOfflineModeEnabled);
     const [isTwoStepJpCnEnabled, setIsTwoStepJpCnEnabled] = useState(currentIsTwoStepJpCnEnabled);
+
+    // ASR Settings
+    const [isOfflineAsrEnabled, setIsOfflineAsrEnabled] = useState(currentIsOfflineAsrEnabled);
+    const [isWebSpeechApiEnabled, setIsWebSpeechApiEnabled] = useState(currentIsWebSpeechApiEnabled);
+    const [asrModelId, setAsrModelId] = useState(currentAsrModelId);
+    const [isNoiseCancellationEnabled, setIsNoiseCancellationEnabled] = useState(currentIsNoiseCancellationEnabled);
+    const [audioGainValue, setAudioGainValue] = useState(currentAudioGainValue);
 
     // Offline TTS State
     const [isOfflineTtsEnabled, setIsOfflineTtsEnabled] = useState(currentIsOfflineTtsEnabled);
@@ -123,24 +159,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             setOfflineModelName(currentOfflineModelName);
             setIsOfflineEnabled(currentIsOfflineModeEnabled);
             setIsTwoStepJpCnEnabled(currentIsTwoStepJpCnEnabled);
+            
+            // TTS
             setIsOfflineTtsEnabled(currentIsOfflineTtsEnabled);
             setOfflineTtsVoiceURI(currentOfflineTtsVoiceURI);
             setOfflineTtsRate(currentOfflineTtsRate);
             setOfflineTtsPitch(currentOfflineTtsPitch);
+            
+            // Params
             setOfflineMaxTokens(currentOfflineMaxTokens);
             setOfflineTopK(currentOfflineTopK);
             setOfflineTemperature(currentOfflineTemperature);
             setOfflineRandomSeed(currentOfflineRandomSeed);
             setOfflineSupportAudio(currentOfflineSupportAudio);
             setOfflineMaxNumImages(currentOfflineMaxNumImages);
+
+            // ASR
+            setIsOfflineAsrEnabled(currentIsOfflineAsrEnabled);
+            setIsWebSpeechApiEnabled(currentIsWebSpeechApiEnabled);
+            setAsrModelId(currentAsrModelId);
+            setIsNoiseCancellationEnabled(currentIsNoiseCancellationEnabled);
+            setAudioGainValue(currentAudioGainValue);
         }
-    }, [isOpen, currentApiKey, currentModelName, currentOnlineProvider, currentOpenaiApiUrl, currentHuggingFaceApiKey, currentOfflineModelName, currentIsOfflineModeEnabled, currentIsTwoStepJpCnEnabled, currentIsOfflineTtsEnabled, currentOfflineTtsVoiceURI, currentOfflineTtsRate, currentOfflineTtsPitch, currentOfflineMaxTokens, currentOfflineTopK, currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, currentOfflineMaxNumImages]);
+    }, [
+        isOpen, currentApiKey, currentModelName, currentOnlineProvider, currentOpenaiApiUrl, 
+        currentHuggingFaceApiKey, currentOfflineModelName, currentIsOfflineModeEnabled, 
+        currentIsTwoStepJpCnEnabled, currentIsOfflineTtsEnabled, currentOfflineTtsVoiceURI, 
+        currentOfflineTtsRate, currentOfflineTtsPitch, currentOfflineMaxTokens, currentOfflineTopK, 
+        currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, 
+        currentOfflineMaxNumImages, currentIsOfflineAsrEnabled, currentIsWebSpeechApiEnabled,
+        currentAsrModelId, currentIsNoiseCancellationEnabled, currentAudioGainValue
+    ]);
     
     useEffect(() => {
         if (isOpen && voices.length > 0 && targetLang) {
             const langVoices = voices.filter(v => v.lang.startsWith(targetLang.code));
             setFilteredVoices(langVoices);
-            // If the currently selected voice is not compatible with the new target language, reset it.
             if (offlineTtsVoiceURI && !langVoices.some(v => v.voiceURI === offlineTtsVoiceURI)) {
                 setOfflineTtsVoiceURI(langVoices[0]?.voiceURI || '');
             }
@@ -151,9 +205,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     
     const handleSave = () => {
         onSave(
-            apiKey, modelName, huggingFaceApiKey, offlineModelName, isOfflineEnabled, onlineProvider, openaiApiUrl,
+            apiKey, modelName, huggingFaceApiKey, offlineModelName, asrModelId, isOfflineEnabled, isOfflineAsrEnabled, isWebSpeechApiEnabled, onlineProvider, openaiApiUrl,
             isOfflineTtsEnabled, offlineTtsVoiceURI, offlineTtsRate, offlineTtsPitch, isTwoStepJpCnEnabled,
-            offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages
+            offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages,
+            isNoiseCancellationEnabled, audioGainValue
         );
         onClose();
     };
@@ -177,12 +232,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setOfflineRandomSeed(101);
         setOfflineSupportAudio(false);
         setOfflineMaxNumImages(1);
+        
+        // Clear ASR
+        setIsOfflineAsrEnabled(false);
+        setIsWebSpeechApiEnabled(true);
+        setAsrModelId(ASR_MODELS[0].id);
+        setIsNoiseCancellationEnabled(false);
+        setAudioGainValue(1.0);
+        onClearAsrCache();
+
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
-        onSave('', 'gemini-2.5-flash', '', '', false, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 101, false, 1);
+        onSave('', 'gemini-2.5-flash', '', '', ASR_MODELS[0].id, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 101, false, 1, false, 1.0);
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         setOfflineModelName(e.target.value);
+    };
+
+    const handleAsrModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setAsrModelId(e.target.value);
     };
 
     const TabButton: React.FC<{tabName: string; label: string}> = ({tabName, label}) => (
@@ -292,16 +360,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
     );
 
-    const ToggleSwitch: React.FC<{id: string, isEnabled: boolean, setIsEnabled: (enabled: boolean) => void, title: string, description: string}> = ({ id, isEnabled, setIsEnabled, title, description }) => (
+    const ToggleSwitch: React.FC<{id: string, isEnabled: boolean, setIsEnabled: (enabled: boolean) => void, title: string, description: string, disabled?: boolean}> = ({ id, isEnabled, setIsEnabled, title, description, disabled }) => (
         <div className="flex items-center justify-between">
-            <label htmlFor={id} className="text-sm font-medium text-gray-700">
+            <label htmlFor={id} className={`text-sm font-medium ${disabled ? 'text-gray-400' : 'text-gray-700'}`}>
                 {title}
-                <span className="block text-xs text-gray-500">{description}</span>
+                <span className={`block text-xs ${disabled ? 'text-gray-300' : 'text-gray-500'}`}>{description}</span>
             </label>
             <button
                 id={id}
-                onClick={() => setIsEnabled(!isEnabled)}
-                className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${isEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                onClick={() => !disabled && setIsEnabled(!isEnabled)}
+                disabled={disabled}
+                className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${isEnabled ? 'bg-blue-600' : 'bg-gray-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                 role="switch"
                 aria-checked={isEnabled}
             >
@@ -340,9 +409,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <div className="border-b border-gray-200">
-                    <nav className="flex space-x-2 p-2" role="tablist" aria-label="Settings tabs">
+                    <nav className="flex space-x-2 p-2 overflow-x-auto" role="tablist" aria-label="Settings tabs">
                        <TabButton tabName="online" label={t('settings.tabOnline')} />
                        <TabButton tabName="offline" label={t('settings.tabOffline')} />
+                       <TabButton tabName="speech" label={t('settings.tabSpeech')} />
                        <TabButton tabName="tts" label={t('settings.tabTts')} />
                        <TabButton tabName="offline-params" label={t('settings.tabOfflineParams')} />
                     </nav>
@@ -409,22 +479,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
                     {activeTab === 'offline' && (
                         <div role="tabpanel" id="offline-settings" aria-labelledby="offline-tab" className="space-y-6">
-                            {/*
-                            <div>
-                                <label htmlFor="hf-api-key" className="block text-sm font-medium text-gray-700 mb-1">
-                                    {t('settings.hfApiKeyLabel')}
-                                </label>
-                                <input
-                                    type="password"
-                                    id="hf-api-key"
-                                    value={huggingFaceApiKey}
-                                    onChange={(e) => setHuggingFaceApiKey(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                    placeholder={t('settings.hfApiKeyPlaceholder')}
-                                />
-                                 <p className="text-xs text-gray-500 mt-1">{t('settings.hfApiKeyDescription')}</p>
-                            </div>
-                            */}
                              <div className="space-y-3">
                                 <label className="block text-sm font-medium text-gray-700">{t('settings.manageModelsLabel')}</label>
                                 {OFFLINE_MODELS.filter(m => m.value).map(model => (
@@ -449,6 +503,155 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                     description={t('settings.enableTwoStepDescription')}
                                 />
                             </div>
+                        </div>
+                    )}
+                    {activeTab === 'speech' && (
+                         <div role="tabpanel" id="speech-settings" aria-labelledby="speech-tab" className="space-y-6">
+                            <ToggleSwitch
+                                id="web-speech-toggle"
+                                isEnabled={isWebSpeechApiEnabled}
+                                setIsEnabled={(enabled) => {
+                                    setIsWebSpeechApiEnabled(enabled);
+                                    if (enabled) {
+                                        // Web Speech API is independent of others, but usually preferred if available online.
+                                        // We don't necessarily force disable Whisper, but App.tsx logic prioritizes.
+                                    }
+                                }}
+                                title={t('settings.enableWebSpeechLabel')}
+                                description={t('settings.enableWebSpeechDescription')}
+                             />
+                             <div className="border-t border-gray-200"></div>
+                             
+                             <ToggleSwitch
+                                id="asr-toggle"
+                                isEnabled={isOfflineAsrEnabled}
+                                setIsEnabled={(enabled) => {
+                                    setIsOfflineAsrEnabled(enabled);
+                                    if (enabled) {
+                                        // Disable Gemma Audio to prevent conflict
+                                        setOfflineSupportAudio(false);
+                                    }
+                                }}
+                                title={t('settings.enableOfflineAsrLabel')}
+                                description={t('settings.enableOfflineAsrDescription')}
+                             />
+                            {/* ASR Model Management */}
+                            <div className={`space-y-3 transition-opacity ${!isOfflineAsrEnabled ? 'opacity-50' : ''}`}>
+                                <label className={`block text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>{t('settings.asrModelLabel')}</label>
+                                {ASR_MODELS.map(model => {
+                                    const isCached = asrModelsCacheStatus[model.id] || false;
+                                    const isLoadingThisModel = isAsrInitializing && asrModelId === model.id;
+                                    return (
+                                        <div key={model.id} className="p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center">
+                                                    <input
+                                                        type="radio"
+                                                        id={`asr-model-${model.id}`}
+                                                        name="asr-model-selection"
+                                                        value={model.id}
+                                                        checked={asrModelId === model.id}
+                                                        onChange={handleAsrModelSelect}
+                                                        className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                        disabled={!isOfflineAsrEnabled}
+                                                    />
+                                                    <label htmlFor={`asr-model-${model.id}`} className={`ml-3 text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-800'}`}>
+                                                        {model.name} <span className="text-gray-500 font-normal">({model.size})</span>
+                                                    </label>
+                                                </div>
+                                                <div className="flex items-center space-x-3">
+                                                    {!isLoadingThisModel && (
+                                                        isCached ? (
+                                                            <span className="text-sm font-medium text-green-600">{t('settings.modelCached') || 'Cached'}</span>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => onDownloadAsrModel(model.id)}
+                                                                disabled={isAsrInitializing || !isOfflineAsrEnabled}
+                                                                className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                                            >
+                                                                {t('settings.modelDownload') || 'Download'}
+                                                            </button>
+                                                        )
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {isLoadingThisModel && (
+                                                <div className="pt-1 text-center text-sm text-blue-600">
+                                                    {asrLoadingProgress.file} ({Math.round(asrLoadingProgress.progress)}%)
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                 <div>
+                                    <button
+                                        onClick={onClearAsrCache}
+                                        disabled={!isOfflineAsrEnabled}
+                                        className="w-full flex items-center justify-center space-x-2 text-red-600 font-medium py-2 px-4 rounded-lg border border-red-200 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <TrashIcon className="h-5 w-5" />
+                                        <span>{t('settings.clearAsrCacheButton')}</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="border-t border-gray-200"></div>
+
+                            {/* Audio Processing Settings */}
+                             <div className={`space-y-4 transition-opacity ${!isOfflineAsrEnabled ? 'opacity-50' : ''}`}>
+                                <label className={`block text-sm font-medium -mb-2 ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>{t('settings.audioProcessingLabel')}</label>
+                                 <ToggleSwitch
+                                    id="noise-cancellation-toggle"
+                                    isEnabled={isNoiseCancellationEnabled}
+                                    setIsEnabled={setIsNoiseCancellationEnabled}
+                                    title={t('settings.enableNoiseCancellationLabel')}
+                                    description={t('settings.enableNoiseCancellationDescription')}
+                                    disabled={!isOfflineAsrEnabled}
+                                 />
+                                 <div>
+                                    <label htmlFor="gain-slider" className={`flex justify-between items-center text-sm font-medium mb-1 ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>
+                                        <span>{t('settings.audioGainLabel')}</span>
+                                        <span className="font-normal text-gray-500">{audioGainValue.toFixed(1)}x</span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        id="gain-slider"
+                                        min={0.5} max={5} step={0.1}
+                                        value={audioGainValue}
+                                        onChange={e => setAudioGainValue(parseFloat(e.target.value))}
+                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                        disabled={!isOfflineAsrEnabled}
+                                    />
+                                 </div>
+                            </div>
+
+                            <div className="border-t border-gray-200"></div>
+                            
+                            <ToggleSwitch 
+                                id="support-audio-toggle" 
+                                isEnabled={offlineSupportAudio} 
+                                setIsEnabled={(enabled) => {
+                                    setOfflineSupportAudio(enabled);
+                                    if (enabled) {
+                                        // Disable Whisper to prevent conflict
+                                        setIsOfflineAsrEnabled(false);
+                                        // Suggest enabling offline mode if not already
+                                        if (!isOfflineEnabled) {
+                                            // Optional: setIsOfflineEnabled(true); 
+                                            // But maybe better to just warn or let user handle main toggle
+                                        }
+                                    }
+                                }} 
+                                title={t('settings.enableGemmaAudioLabel')} 
+                                description={t('settings.enableGemmaAudioDescription')} 
+                                disabled={!isOfflineEnabled} // Only allow if offline mode is on, or allow but it won't work
+                            />
+                            {!isOfflineEnabled && (
+                                <p className="text-xs text-amber-600 mt-1 ml-1">
+                                    * Requires "Enable Offline Translation" to be ON.
+                                </p>
+                            )}
+
                         </div>
                     )}
                     {activeTab === 'tts' && (
@@ -500,8 +703,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <label htmlFor="random-seed" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.randomSeedLabel')}</label>
                                 <input type="number" id="random-seed" value={offlineRandomSeed} onChange={e => setOfflineRandomSeed(parseInt(e.target.value, 10))} className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
                             </div>
-
-                            <ToggleSwitch id="support-audio-toggle" isEnabled={offlineSupportAudio} setIsEnabled={setOfflineSupportAudio} title={t('settings.supportAudioLabel')} description={t('settings.supportAudioDescription')} />
 
                             <ToggleSwitch id="max-num-images-toggle" isEnabled={offlineMaxNumImages === 1} setIsEnabled={(enabled) => setOfflineMaxNumImages(enabled ? 1 : 0)} title={t('settings.maxNumImagesLabel')} description={t('settings.maxNumImagesDescription')} />
                         </div>

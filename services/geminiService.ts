@@ -1,6 +1,19 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
+const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const result = reader.result as string;
+            const base64 = result.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+};
+
 export const translateTextStream = async (
     text: string, 
     sourceLang: string, 
@@ -115,7 +128,7 @@ export const translateImage = async (
             },
         });
         
-        const jsonString = response.text.trim();
+        const jsonString = response.text?.trim() || "{}";
         const result = JSON.parse(jsonString);
 
         if (typeof result.sourceText === 'string' && typeof result.translatedText === 'string') {
@@ -130,5 +143,56 @@ export const translateImage = async (
             throw new Error('Failed to parse the response from the Gemini API. The response was not valid JSON.');
         }
         throw new Error('Gemini API request for image translation failed.');
+    }
+};
+
+export const transcribeAudioGemini = async (
+    audioBlob: Blob,
+    language: string,
+    apiKey: string,
+    modelName: string,
+    signal?: AbortSignal
+): Promise<string> => {
+    if (!apiKey) {
+        throw new Error('Gemini API Key is not set. Please add it in the settings.');
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    const base64Audio = await blobToBase64(audioBlob);
+    
+    // Determine mime type from blob, default to audio/wav or audio/webm
+    let mimeType = audioBlob.type;
+    if (mimeType.includes(';')) {
+        mimeType = mimeType.split(';')[0];
+    }
+    if (!mimeType) mimeType = 'audio/wav';
+
+    const audioPart = {
+        inlineData: {
+            mimeType: mimeType,
+            data: base64Audio
+        }
+    };
+
+    const prompt = `Transcribe the following audio. The language is ${language}. Return only the transcribed text.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: modelName,
+            contents: { parts: [audioPart, { text: prompt }] }
+        });
+
+        if (signal?.aborted) {
+            throw new DOMException('Transcription cancelled by user.', 'AbortError');
+        }
+
+        return response.text?.trim() || '';
+
+    } catch (error) {
+        console.error('Error transcribing audio:', error);
+         if (error instanceof DOMException && error.name === 'AbortError') {
+            throw error;
+        }
+        throw new Error('Gemini API transcription request failed.');
     }
 };

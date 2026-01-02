@@ -4,7 +4,7 @@
 	 * Environment Polyfill - MUST be at the very top.
 	 * This spoofs the environment for MediaPipe's internal checks before the script is loaded.
 	 */
-	self.exports = {};
+	(self as any).exports = {};
 	//importScripts("/public/genai_bundle.js");//Development and Testing
 	//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用(Backup-2)
 	//const { FilesetResolver, LlmInference } = self.exports;
@@ -140,7 +140,8 @@
 
 	const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm";
 
-	let llmInference: InstanceType<typeof LlmInference> | null = null;
+	// FIX: Use `LlmInference` directly as the type, as `InstanceType` is not compatible with classes that have private constructors.
+	let llmInference: LlmInference | null = null;
 	let currentTaskAbortController: AbortController | null = null;
 
 const handleInit = async (payload: any) => {
@@ -202,15 +203,43 @@ const performTranslation = (text: string, sourceLang: string, targetLang: string
         const handleAbort = () => reject(new DOMException('Translation cancelled.', 'AbortError'));
         signal.addEventListener('abort', handleAbort, { once: true });
         
+        // Performance measurement variables
+        const startTime = performance.now();
+        let prefillTime: number | null = null;
+        let decodeStartTime: number | null = null;
+
         try {
             let fullText = "";
             const streamCallback = (partialResult: string, done: boolean) => {
                 if (signal.aborted) return;
+
+                // --- Performance Logging: Prefill ---
+                if (prefillTime === null && partialResult) { // First chunk has arrived
+                    const firstChunkTime = performance.now();
+                    prefillTime = firstChunkTime - startTime;
+                    decodeStartTime = firstChunkTime;
+                    console.log(`[Perf] Prefill: ${prefillTime.toFixed(2)} ms`);
+                }
+
                 fullText += partialResult;
+
                 if (stream) {
                     self.postMessage({ type: 'translation_chunk', payload: { chunk: partialResult } });
                 }
+
                 if (done) {
+                    // --- Performance Logging: Decoding ---
+                    const endTime = performance.now();
+                    if (decodeStartTime) {
+                        const decodingTime = endTime - decodeStartTime;
+                        // Use chars/sec as a proxy for tokens/sec since token count is not available
+                        const charsPerSec = fullText.length / (decodingTime / 1000);
+                        console.log(`[Perf] Decoding: ${charsPerSec.toFixed(2)} chars/sec (${fullText.length} chars in ${decodingTime.toFixed(2)} ms)`);
+                    } else if (prefillTime) {
+                        // This case handles when the response is a single chunk. 'done' is true on the first call.
+                        console.log(`[Perf] Single-chunk response received in ${prefillTime.toFixed(2)} ms.`);
+                    }
+
                     signal.removeEventListener('abort', handleAbort);
                     resolve(fullText.trim());
                 }
