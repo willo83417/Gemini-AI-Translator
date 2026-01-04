@@ -24,6 +24,7 @@ interface TranslationOutputProps {
     isOfflineTtsEnabled: boolean;
     isAstRecording: boolean;
     onToggleAstRecording: () => void;
+    recordingCountdown: number | null;
 }
 
 const TranslationOutput: React.FC<TranslationOutputProps> = ({
@@ -45,6 +46,7 @@ const TranslationOutput: React.FC<TranslationOutputProps> = ({
     isOfflineTtsEnabled,
     isAstRecording,
     onToggleAstRecording,
+    recordingCountdown,
 }) => {
     const { t } = useTranslation();
     const [isFlipped, setIsFlipped] = useState(false);
@@ -159,6 +161,11 @@ const TranslationOutput: React.FC<TranslationOutputProps> = ({
                 >
                     <MicrophoneIcon />
                 </button>
+                {isAstRecording && recordingCountdown !== null ? (
+                    <span className="text-red-500 font-semibold text-base tabular-nums ml-2">
+                        {t('translationInput.countdownPrefix')}{String(recordingCountdown).padStart(2, '0')}
+                    </span>
+                ) : null}
             </div>
         </div>
     );

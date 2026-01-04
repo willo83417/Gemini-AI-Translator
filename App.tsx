@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import TranslationInput from './components/TranslationInput';
@@ -207,6 +208,7 @@ const App: React.FC = () => {
     const [sourceLang, setSourceLang] = useState<Language>(LANGUAGES[0]); // Default to Auto Detect
     const [targetLang, setTargetLang] = useState<Language>(LANGUAGES[6]); // Default to Japanese
     const [isLoading, setIsLoading] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
     
     const [isRecording, setIsRecording] = useState(false);
     const [isAstRecording, setIsAstRecording] = useState(false);
@@ -347,6 +349,176 @@ const App: React.FC = () => {
         };
     }, []);
 
+    const isModelDownloaded = isOfflineModeEnabled && !!offlineModelName && downloadProgress[offlineModelName]?.status === 'completed';
+    const isOfflineModelReady = isModelDownloaded && isOfflineModelInitialized;
+
+    const performTranslate = useCallback(async (textToTranslate: string) => {
+        if (!textToTranslate.trim()) {
+            setTranslatedText('');
+            return;
+        }
+    
+        if (translationAbortControllerRef.current) {
+            translationAbortControllerRef.current.abort();
+        }
+        const controller = new AbortController();
+        translationAbortControllerRef.current = controller;
+    
+        setIsLoading(true);
+        setTranslatedText('');
+    
+        try {
+            const sourceLangEn = i18n.t(sourceLang.name, { lng: 'en' });
+            const targetLangEn = i18n.t(targetLang.name, { lng: 'en' });
+
+            if (isOfflineModeEnabled) {
+                if (!offlineModelName) throw new Error('Please select an offline model in settings.');
+                if (isOfflineModelInitializing) throw new Error('Offline model is still initializing.');
+                if (!isOfflineModelReady) throw new Error('Selected offline model is not ready.');
+                
+                const worker = getOrCreateWorker();
+                worker.postMessage({
+                    type: 'translate',
+                    payload: {
+                        text: textToTranslate,
+                        sourceLang: sourceLangEn,
+                        targetLang: targetLangEn,
+                        sourceLangCode: sourceLang.code,
+                        targetLangCode: targetLang.code,
+                        isTwoStepEnabled: isTwoStepJpCn,
+                    }
+                });
+            } else { // Online mode
+                if (!isOnline) throw new Error("You are offline. Enable offline mode or connect to the internet.");
+    
+                let finalResult = '';
+                const onChunk = (chunk: string) => {
+                    finalResult += chunk;
+                    setTranslatedText(prev => prev.length === 0 ? chunk.trimStart() : prev + chunk);
+                };
+    
+                if (onlineProvider === 'openai') {
+                    if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
+                    if (!openaiApiUrl) throw new Error("OpenAI API URL is not set. Please add it in the settings.");
+                    finalResult = await translateTextOpenAIStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, openaiApiUrl, onChunk, controller.signal);
+                } else { // Gemini is default
+                    if (!apiKey) throw new Error("Gemini API Key is not set. Please add it in the settings.");
+                    finalResult = await translateTextGeminiStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, onChunk, controller.signal);
+                }
+    
+                const newHistoryItem: TranslationHistoryItem = {
+                    id: Date.now(), inputText: textToTranslate, translatedText: finalResult, sourceLang, targetLang,
+                };
+                setHistory(prevHistory => {
+                    const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
+                    localStorage.setItem('translation-history', JSON.stringify(updatedHistory));
+                    return updatedHistory;
+                });
+                setIsLoading(false);
+            }
+    
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') {
+                console.log("Translation cancelled by user.");
+                setIsLoading(false);
+                return;
+            }
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            showNotification(t('notifications.translationFailed', { errorMessage }), 'error');
+            if (err instanceof Error && (err.message.includes('select an offline model') || err.message.includes('API Key is not set') || err.message.includes('API URL is not set'))) {
+                setIsSettingsOpen(true);
+            }
+            console.error(err);
+            setIsLoading(false);
+        } finally {
+            if (!isOfflineModeEnabled && translationAbortControllerRef.current === controller) {
+                translationAbortControllerRef.current = null;
+            }
+        }
+    }, [sourceLang, targetLang, apiKey, modelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t, i18n, getOrCreateWorker]);
+
+    const performReverseTranslate = useCallback(async (textToTranslate: string) => {
+        if (!textToTranslate.trim()) {
+            setTranslatedText('');
+            return;
+        }
+
+        if (translationAbortControllerRef.current) {
+            translationAbortControllerRef.current.abort();
+        }
+        const controller = new AbortController();
+        translationAbortControllerRef.current = controller;
+
+        setIsLoading(true);
+        setTranslatedText('');
+
+        try {
+            // SWAPPED LANGUAGES for reverse translation
+            const sourceLangEn = i18n.t(targetLang.name, { lng: 'en' });
+            const targetLangEn = i18n.t(sourceLang.name, { lng: 'en' });
+
+            if (isOfflineModeEnabled) {
+                if (!offlineModelName) throw new Error('Please select an offline model in settings.');
+                if (isOfflineModelInitializing) throw new Error('Offline model is still initializing.');
+                if (!isOfflineModelReady) throw new Error('Selected offline model is not ready.');
+                
+                const worker = getOrCreateWorker();
+                worker.postMessage({
+                    type: 'translate',
+                    payload: {
+                        text: textToTranslate,
+                        sourceLang: sourceLangEn,
+                        targetLang: targetLangEn,
+                        sourceLangCode: targetLang.code, // SWAPPED
+                        targetLangCode: sourceLang.code, // SWAPPED
+                        isTwoStepEnabled: isTwoStepJpCn,
+                    }
+                });
+            } else { // Online mode
+                if (!isOnline) throw new Error("You are offline. Enable offline mode or connect to the internet.");
+
+                let finalResult = '';
+                const onChunk = (chunk: string) => {
+                    finalResult += chunk;
+                    setTranslatedText(prev => prev.length === 0 ? chunk.trimStart() : prev + chunk);
+                };
+
+                if (onlineProvider === 'openai') {
+                    if (!apiKey) throw new Error("OpenAI API Key is not set.");
+                    if (!openaiApiUrl) throw new Error("OpenAI API URL is not set.");
+                    finalResult = await translateTextOpenAIStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, openaiApiUrl, onChunk, controller.signal);
+                } else {
+                    if (!apiKey) throw new Error("Gemini API Key is not set.");
+                    finalResult = await translateTextGeminiStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, onChunk, controller.signal);
+                }
+
+                const newHistoryItem: TranslationHistoryItem = {
+                    id: Date.now(), inputText: textToTranslate, translatedText: finalResult, sourceLang: targetLang, targetLang: sourceLang, // SWAPPED
+                };
+                setHistory(prevHistory => {
+                    const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
+                    localStorage.setItem('translation-history', JSON.stringify(updatedHistory));
+                    return updatedHistory;
+                });
+                setIsLoading(false);
+            }
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') {
+                console.log("Reverse translation cancelled.");
+                setIsLoading(false);
+                return;
+            }
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            showNotification(t('notifications.translationFailed', { errorMessage }), 'error');
+            console.error(err);
+            setIsLoading(false);
+        } finally {
+            if (!isOfflineModeEnabled && translationAbortControllerRef.current === controller) {
+                translationAbortControllerRef.current = null;
+            }
+        }
+    }, [targetLang, sourceLang, apiKey, modelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t, i18n, getOrCreateWorker]);
+
     useEffect(() => {
         messageHandlerRef.current = (event: MessageEvent) => {
             const { type, payload } = event.data;
@@ -370,8 +542,10 @@ const App: React.FC = () => {
                     setTranslatedText(prev => prev.length === 0 ? payload.chunk.trimStart() : prev + payload.chunk);
                     break;
                 case 'translation_done': {
+                    const currentSourceLang = isReverseTranslateRef.current ? targetLang : sourceLang;
+                    const currentTargetLang = isReverseTranslateRef.current ? sourceLang : targetLang;
                     const newHistoryItem: TranslationHistoryItem = {
-                        id: Date.now(), inputText, translatedText: payload.result, sourceLang, targetLang,
+                        id: Date.now(), inputText, translatedText: payload.result, sourceLang: currentSourceLang, targetLang: currentTargetLang,
                     };
                     setHistory(prevHistory => {
                         const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
@@ -401,26 +575,32 @@ const App: React.FC = () => {
                     setInputText('');
                     setIsLoading(false);
                     break;
-                case 'transcribe_done': // Legacy logic for MediaPipe audio
-                    const transcribedText = payload.text;
-                    setInputText(transcribedText);
+                case 'transcribe_done':
+                    setIsTranscribing(false);
+                    const transcribedText = payload.text?.trim() || '';
                     setIsLoading(false);
-                    if (isAwaitingAstTranslation) {
-                        setIsAwaitingAstTranslation(false);
-                        if (transcribedText.trim()) {
-                            performTranslate(transcribedText);
+                    if (transcribedText) {
+                        setInputText(transcribedText);
+                        if (isAwaitingAstTranslation) {
+                            setIsAwaitingAstTranslation(false);
+                            performReverseTranslate(transcribedText);
                         }
+                    } else {
+                        setInputText(t('notifications.transcriptionFailedEmpty'));
+                        setIsAwaitingAstTranslation(false);
                     }
                     break;
-                case 'transcribe_error': // Legacy logic
-                    showNotification(t('notifications.transcriptionFailed', { errorMessage: payload.error }), 'error');
-                    setInputText('');
+                case 'transcribe_error':
+                    setIsTranscribing(false);
+                    const errorMessage = payload.error || 'Unknown transcription error.';
+                    showNotification(t('notifications.transcriptionFailed', { errorMessage }), 'error');
+                    setInputText(t('notifications.transcriptionFailed', { errorMessage }));
                     setIsLoading(false);
                     setIsAwaitingAstTranslation(false);
                     break;
             }
         };
-    }, [t, showNotification, inputText, sourceLang, targetLang, isAwaitingAstTranslation]);
+    }, [t, showNotification, inputText, sourceLang, targetLang, isAwaitingAstTranslation, performReverseTranslate, isReverseTranslateRef]);
     
     // --- Whisper Worker Logic (Offline ASR) ---
     const checkAllAsrCacheStatus = useCallback(async () => {
@@ -430,12 +610,6 @@ const App: React.FC = () => {
         }
         return statuses;
     }, []);
-
-    const performReverseTranslate = useCallback(async (textToTranslate: string) => {
-        if (!textToTranslate.trim()) return;
-        // Logic handled in handleToggleAstRecording flow
-    }, [targetLang, sourceLang]); 
-
 
     const onAsrWorkerMessage = useCallback((e: MessageEvent<AppMessage>) => {
         const { type, payload } = e.data;
@@ -447,8 +621,9 @@ const App: React.FC = () => {
                 break;
             case 'error':
                 showNotification(payload, 'error');
-                setInputText(payload); // Show error in input box
+                setInputText(t('notifications.transcriptionFailed', { errorMessage: payload }));
                 setIsAsrInitializing(false);
+                setIsTranscribing(false);
                 break;
             case 'loaded':
                 setIsAsrInitialized(true);
@@ -463,14 +638,16 @@ const App: React.FC = () => {
                 setInputText(payload);
                 break;
             case 'transcription':
-                setInputText(payload);
-                if (isReverseTranslateRef.current) {
-                    if (payload.trim()) {
-                       // Handled implicitly by input text change if we were using a different flow,
-                       // but for ASR worker we usually need explicit trigger.
-                       // For simplicity in this fix, we let the user press translate or rely on manual trigger
-                       // unless we refactor performTranslate completely. 
+                setIsTranscribing(false);
+                const transcribedText = (payload || '').trim();
+                if (transcribedText) {
+                    setInputText(transcribedText);
+                    if (isReverseTranslateRef.current) {
+                        performReverseTranslate(transcribedText);
+                        isReverseTranslateRef.current = false;
                     }
+                } else {
+                    setInputText(t('notifications.transcriptionFailedEmpty'));
                     isReverseTranslateRef.current = false;
                 }
                 break;
@@ -480,7 +657,7 @@ const App: React.FC = () => {
             default:
                 break;
         }
-    }, [showNotification, checkAllAsrCacheStatus, t]);
+    }, [showNotification, checkAllAsrCacheStatus, t, performReverseTranslate]);
 
     const initializeAsrWorker = useCallback(() => {
         if (asrWorkerRef.current) {
@@ -495,40 +672,45 @@ const App: React.FC = () => {
     }, [onAsrWorkerMessage]);
 
 
-    // Effect to manage ASR Worker Lifecycle
+    // Effect to manage ASR Worker creation and destruction, ensuring listeners are always up-to-date
     useEffect(() => {
         if (isOfflineAsrEnabled) {
-            if (!asrWorkerRef.current) {
-                initializeAsrWorker();
-            }
-            const loadModel = async () => {
-                if (asrWorkerRef.current && asrModelId && !isAsrInitialized && !isAsrInitializing) {
-                    const isCached = await checkAsrModelCacheStatus(asrModelId);
-                    if (isCached) {
-                        const model = ASR_MODELS.find(m => m.id === asrModelId);
-                        if (model) {
-                            console.log(`Auto-loading cached ASR model: ${model.id}`);
-                            setIsAsrInitializing(true);
-                            setAsrLoadingProgress({ file: '', progress: 0 });
-                            asrWorkerRef.current.postMessage({
-                                type: 'load',
-                                payload: { modelId: model.id, quantization: model.quantization }
-                            });
-                        }
-                    }
-                }
-            };
-            loadModel();
-        } else {
+            initializeAsrWorker();
+        }
+        
+        // Cleanup function for when the component unmounts or offline ASR is disabled
+        return () => {
             if (asrWorkerRef.current) {
-                console.log('Disabling offline ASR. Terminating worker.');
+                console.log('Cleaning up ASR worker.');
                 asrWorkerRef.current.terminate();
                 asrWorkerRef.current = null;
                 setIsAsrInitialized(false);
                 setIsAsrInitializing(false);
             }
+        };
+    }, [isOfflineAsrEnabled, initializeAsrWorker]);
+
+    // Effect to auto-load a cached ASR model when it's selected and the worker is ready
+    useEffect(() => {
+        if (isOfflineAsrEnabled && asrWorkerRef.current && asrModelId && !isAsrInitialized && !isAsrInitializing) {
+            const loadModel = async () => {
+                const isCached = await checkAsrModelCacheStatus(asrModelId);
+                if (isCached) {
+                    const model = ASR_MODELS.find(m => m.id === asrModelId);
+                    if (model) {
+                        console.log(`Auto-loading cached ASR model: ${model.id}`);
+                        setIsAsrInitializing(true);
+                        setAsrLoadingProgress({ file: '', progress: 0 });
+                        asrWorkerRef.current.postMessage({
+                            type: 'load',
+                            payload: { modelId: model.id, quantization: model.quantization }
+                        });
+                    }
+                }
+            };
+            loadModel();
         }
-    }, [isOfflineAsrEnabled, asrModelId, isAsrInitialized, isAsrInitializing, initializeAsrWorker]);
+    }, [isOfflineAsrEnabled, asrModelId, isAsrInitialized, isAsrInitializing]);
 
 
     // --- Common Effects ---
@@ -655,9 +837,6 @@ const App: React.FC = () => {
         loadVoices();
     }, []);
 
-    const isModelDownloaded = isOfflineModeEnabled && !!offlineModelName && downloadProgress[offlineModelName]?.status === 'completed';
-    const isOfflineModelReady = isModelDownloaded && isOfflineModelInitialized;
-
     // Logic to load/unload MediaPipe LLM
     useEffect(() => {
         const modelToLoad = isModelDownloaded ? offlineModelName : null;
@@ -712,91 +891,6 @@ const App: React.FC = () => {
         offlineSupportAudio, offlineMaxNumImages
     ]);
 
-
-    const performTranslate = useCallback(async (textToTranslate: string) => {
-        if (!textToTranslate.trim()) {
-            setTranslatedText('');
-            return;
-        }
-    
-        if (translationAbortControllerRef.current) {
-            translationAbortControllerRef.current.abort();
-        }
-        const controller = new AbortController();
-        translationAbortControllerRef.current = controller;
-    
-        setIsLoading(true);
-        setTranslatedText('');
-    
-        try {
-            const sourceLangEn = i18n.t(sourceLang.name, { lng: 'en' });
-            const targetLangEn = i18n.t(targetLang.name, { lng: 'en' });
-
-            if (isOfflineModeEnabled) {
-                if (!offlineModelName) throw new Error('Please select an offline model in settings.');
-                if (isOfflineModelInitializing) throw new Error('Offline model is still initializing.');
-                if (!isOfflineModelReady) throw new Error('Selected offline model is not ready.');
-                
-                const worker = getOrCreateWorker();
-                worker.postMessage({
-                    type: 'translate',
-                    payload: {
-                        text: textToTranslate,
-                        sourceLang: sourceLangEn,
-                        targetLang: targetLangEn,
-                        sourceLangCode: sourceLang.code,
-                        targetLangCode: targetLang.code,
-                        isTwoStepEnabled: isTwoStepJpCn,
-                    }
-                });
-            } else { // Online mode
-                if (!isOnline) throw new Error("You are offline. Enable offline mode or connect to the internet.");
-    
-                let finalResult = '';
-                const onChunk = (chunk: string) => {
-                    finalResult += chunk;
-                    setTranslatedText(prev => prev.length === 0 ? chunk.trimStart() : prev + chunk);
-                };
-    
-                if (onlineProvider === 'openai') {
-                    if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
-                    if (!openaiApiUrl) throw new Error("OpenAI API URL is not set. Please add it in the settings.");
-                    finalResult = await translateTextOpenAIStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, openaiApiUrl, onChunk, controller.signal);
-                } else { // Gemini is default
-                    if (!apiKey) throw new Error("Gemini API Key is not set. Please add it in the settings.");
-                    finalResult = await translateTextGeminiStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, onChunk, controller.signal);
-                }
-    
-                const newHistoryItem: TranslationHistoryItem = {
-                    id: Date.now(), inputText: textToTranslate, translatedText: finalResult, sourceLang, targetLang,
-                };
-                setHistory(prevHistory => {
-                    const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
-                    localStorage.setItem('translation-history', JSON.stringify(updatedHistory));
-                    return updatedHistory;
-                });
-                setIsLoading(false);
-            }
-    
-        } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') {
-                console.log("Translation cancelled by user.");
-                setIsLoading(false);
-                return;
-            }
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-            showNotification(t('notifications.translationFailed', { errorMessage }), 'error');
-            if (err instanceof Error && (err.message.includes('select an offline model') || err.message.includes('API Key is not set') || err.message.includes('API URL is not set'))) {
-                setIsSettingsOpen(true);
-            }
-            console.error(err);
-            setIsLoading(false);
-        } finally {
-            if (!isOfflineModeEnabled && translationAbortControllerRef.current === controller) {
-                translationAbortControllerRef.current = null;
-            }
-        }
-    }, [sourceLang, targetLang, apiKey, modelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t, i18n, getOrCreateWorker]);
 
     const handleTranslate = useCallback(() => {
         performTranslate(inputText);
@@ -946,10 +1040,10 @@ const App: React.FC = () => {
     const handleWebSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
         setInputText(transcript);
         if (isFinal && isReverseTranslateRef.current) {
-            performTranslate(transcript);
+            performReverseTranslate(transcript);
             isReverseTranslateRef.current = false;
         }
-    }, [performTranslate]); // performTranslate is stable because it's a useCallback
+    }, [performReverseTranslate]);
 
     const handleWebSpeechError = useCallback((error: string) => {
         showNotification(t('notifications.speechRecognitionError', { error }), 'error');
@@ -1033,6 +1127,7 @@ const App: React.FC = () => {
                 // Offline ASR Path (Whisper/Sherpa)
                 handleStartRecording(async (audioBlob) => {
                     setInputText(t('notifications.transcribing'));
+                    setIsTranscribing(true);
                     try {
                         const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
                         if (asrWorkerRef.current) {
@@ -1050,6 +1145,7 @@ const App: React.FC = () => {
                     } catch (err) {
                         console.error(err);
                         setInputText('');
+                        setIsTranscribing(false);
                         const message = err instanceof Error ? err.message : 'Transcription failed.';
                         showNotification(message, 'error');
                     }
@@ -1060,21 +1156,27 @@ const App: React.FC = () => {
                 // Gemma 3N Audio Path
                 if (isOfflineModelReady) {
                      setInputText(t('notifications.transcribing'));
+                     setIsTranscribing(true);
                      handleStartRecording(async (audioBlob) => {
                         const audioData = await processAudioForTranscription(audioBlob); 
-                        const pcmWavBlob = audioBufferToWav(new AudioBuffer({length: audioData.length, numberOfChannels: 1, sampleRate: 16000}));
+                        const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+                        const audioBuffer = tempAudioContext.createBuffer(1, audioData.length, 16000);
+                        audioBuffer.copyToChannel(audioData, 0);
+                        const pcmWavBlob = audioBufferToWav(audioBuffer);
+                        await tempAudioContext.close();
                         
                         const worker = getOrCreateWorker();
                         worker.postMessage({ 
                             type: 'transcribe', 
                             payload: { 
                                 audioData: pcmWavBlob, 
-                                sourceLang: sourceLang.name
+                                sourceLang: i18n.t(sourceLang.name, { lng: 'en' })
                             } 
                         });
                      });
                 } else {
                      showNotification(t('notifications.offlineModelNotReadyRecording'), 'error');
+                     setIsRecording(false);
                 }
             } else { 
                 // Online Multimodal ASR (OpenAI/Gemini)
@@ -1103,7 +1205,7 @@ const App: React.FC = () => {
                 });
             }
         }
-    }, [isRecording, isAstRecording, showNotification, t, sourceLang, isOfflineAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, isOfflineModelReady, offlineSupportAudio, getOrCreateWorker]);
+    }, [isRecording, isAstRecording, showNotification, t, sourceLang, isOfflineAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, isOfflineModelReady, offlineSupportAudio, getOrCreateWorker, i18n]);
 
     const handleToggleAstRecording = useCallback(() => {
         const isCurrentlyAstRecording = isAstRecording || (!isOfflineAsrEnabled && isWebSpeechApiEnabled && webSpeech.isListening && isReverseTranslateRef.current);
@@ -1129,6 +1231,7 @@ const App: React.FC = () => {
             if (isOfflineAsrEnabled) {
                  handleStartRecording(async (audioBlob) => {
                     setInputText(t('notifications.transcribing'));
+                    setIsTranscribing(true);
                     try {
                         const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
                         if (asrWorkerRef.current) {
@@ -1146,6 +1249,7 @@ const App: React.FC = () => {
                     } catch (err) {
                         console.error(err);
                         setInputText('');
+                        setIsTranscribing(false);
                         isReverseTranslateRef.current = false;
                         const message = err instanceof Error ? err.message : 'Transcription failed.';
                         showNotification(message, 'error');
@@ -1157,16 +1261,21 @@ const App: React.FC = () => {
                  if (isOfflineModelReady) {
                     setIsAwaitingAstTranslation(true);
                     setInputText(t('notifications.transcribing'));
+                    setIsTranscribing(true);
                     handleStartRecording(async (audioBlob) => {
                        const audioData = await processAudioForTranscription(audioBlob); 
-                       const pcmWavBlob = audioBufferToWav(new AudioBuffer({length: audioData.length, numberOfChannels: 1, sampleRate: 16000}));
+                       const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+                       const audioBuffer = tempAudioContext.createBuffer(1, audioData.length, 16000);
+                       audioBuffer.copyToChannel(audioData, 0);
+                       const pcmWavBlob = audioBufferToWav(audioBuffer);
+                       await tempAudioContext.close();
                        
                        const worker = getOrCreateWorker();
                        worker.postMessage({ 
                            type: 'transcribe', 
                            payload: { 
                                audioData: pcmWavBlob, 
-                               sourceLang: targetLang.name 
+                               sourceLang: i18n.t(targetLang.name, { lng: 'en' })
                            } 
                        });
                     });
@@ -1205,7 +1314,7 @@ const App: React.FC = () => {
                 });
             }
         }
-    }, [isAstRecording, isRecording, targetLang, showNotification, t, isOfflineAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, offlineSupportAudio, isOfflineModelReady, getOrCreateWorker, performReverseTranslate]);
+    }, [isAstRecording, isRecording, targetLang, showNotification, t, isOfflineAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, offlineSupportAudio, isOfflineModelReady, getOrCreateWorker, performReverseTranslate, i18n]);
 
     const handleImageCaptured = useCallback(async (imageDataUrl: string) => {
         setIsCameraOpen(false);
@@ -1457,6 +1566,7 @@ const App: React.FC = () => {
                         isOfflineTtsEnabled={isOfflineTtsEnabled}
                         isAstRecording={isAstRecording}
                         onToggleAstRecording={handleToggleAstRecording}
+                        recordingCountdown={recordingCountdown}
                      />
                 </main>
     
@@ -1466,7 +1576,7 @@ const App: React.FC = () => {
                         setInputText={setInputText}
                         sourceLang={sourceLang}
                         setSourceLang={setSourceLang}
-                        isLoading={isLoading || isOfflineModelInitializing || isAsrInitializing || ocrEngineStatus === 'initializing'}
+                        isLoading={isLoading || isOfflineModelInitializing || isAsrInitializing || ocrEngineStatus === 'initializing' || isTranscribing}
                         onTranslate={handleTranslate}
                         onCancel={handleCancelTranslation}
                         isRecording={isRecording}

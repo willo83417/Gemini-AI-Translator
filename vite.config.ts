@@ -1,3 +1,4 @@
+
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig, loadEnv } from 'vite';
@@ -19,6 +20,22 @@ export default defineConfig(({ mode }) => {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
       },
+      build: {
+        chunkSizeWarningLimit: 2000, // Increase limit to 2000 kB
+        rollupOptions: {
+          output: {
+            /*
+            // Optional: Uncomment to group vendor libraries into a single chunk.
+            // This can improve caching for PWA updates, as vendor code changes less often.
+            manualChunks(id) {
+              if (id.includes('node_modules')) {
+                return 'vendor';
+              }
+            }
+            */
+          },
+        },
+      },
         plugins: [
     react(),
     VitePWA({
@@ -26,6 +43,8 @@ export default defineConfig(({ mode }) => {
       injectRegister: 'auto',
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // Do NOT add 'wasm' to globPatterns. WASM files are large and should be lazy-loaded
+        // and cached by the browser's HTTP cache, not precached by the service worker.
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

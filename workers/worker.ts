@@ -218,7 +218,7 @@ const performTranslation = (text: string, sourceLang: string, targetLang: string
                     const firstChunkTime = performance.now();
                     prefillTime = firstChunkTime - startTime;
                     decodeStartTime = firstChunkTime;
-                    console.log(`[Perf] Prefill: ${prefillTime.toFixed(2)} ms`);
+                    console.log(`[Perf] Prefill: ${prefillTime.toFixed(2)} ms`);  //計算Prefill每秒輸出
                 }
 
                 fullText += partialResult;
@@ -234,7 +234,7 @@ const performTranslation = (text: string, sourceLang: string, targetLang: string
                         const decodingTime = endTime - decodeStartTime;
                         // Use chars/sec as a proxy for tokens/sec since token count is not available
                         const charsPerSec = fullText.length / (decodingTime / 1000);
-                        console.log(`[Perf] Decoding: ${charsPerSec.toFixed(2)} chars/sec (${fullText.length} chars in ${decodingTime.toFixed(2)} ms)`);
+                        console.log(`[Perf] Decoding: ${charsPerSec.toFixed(2)} chars/sec (${fullText.length} chars in ${decodingTime.toFixed(2)} ms)`); //計算decode每秒輸出
                     } else if (prefillTime) {
                         // This case handles when the response is a single chunk. 'done' is true on the first call.
                         console.log(`[Perf] Single-chunk response received in ${prefillTime.toFixed(2)} ms.`);
@@ -264,7 +264,6 @@ const handleExtractText = async (payload: any) => {
     }
     
     const { imageBitmap } = payload;
-    // Gemma-3 Specific: Use <image> token in the prompt
     const prompt = `Extract all text from the following image. Return only the extracted text without any extra comments or explanations.`;
     try {
         const response = await llmInference.generateResponse([
