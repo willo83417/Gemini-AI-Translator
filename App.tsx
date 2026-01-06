@@ -603,6 +603,11 @@ const App: React.FC = () => {
     }, [t, showNotification, inputText, sourceLang, targetLang, isAwaitingAstTranslation, performReverseTranslate, isReverseTranslateRef]);
     
     // --- Whisper Worker Logic (Offline ASR) ---
+    const performReverseTranslateRef = useRef(performReverseTranslate);
+    useEffect(() => {
+        performReverseTranslateRef.current = performReverseTranslate;
+    }, [performReverseTranslate]);
+
     const checkAllAsrCacheStatus = useCallback(async () => {
         const statuses: Record<string, boolean> = {};
         for (const model of ASR_MODELS) {
@@ -643,7 +648,7 @@ const App: React.FC = () => {
                 if (transcribedText) {
                     setInputText(transcribedText);
                     if (isReverseTranslateRef.current) {
-                        performReverseTranslate(transcribedText);
+                        performReverseTranslateRef.current(transcribedText);
                         isReverseTranslateRef.current = false;
                     }
                 } else {
@@ -657,7 +662,7 @@ const App: React.FC = () => {
             default:
                 break;
         }
-    }, [showNotification, checkAllAsrCacheStatus, t, performReverseTranslate]);
+    }, [showNotification, checkAllAsrCacheStatus, t]);
 
     const initializeAsrWorker = useCallback(() => {
         if (asrWorkerRef.current) {

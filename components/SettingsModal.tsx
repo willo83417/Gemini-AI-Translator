@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { XIcon, TrashIcon } from './icons';
@@ -127,6 +126,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
     const { t, i18n } = useTranslation();
     const [activeTab, setActiveTab] = useState('online');
+    const [activeOfflineSubTab, setActiveOfflineSubTab] = useState('models');
     
     // Main Settings
     const [apiKey, setApiKey] = useState(currentApiKey);
@@ -293,6 +293,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
            {label}
        </button>
    );
+
+   const SubTabButton: React.FC<{subTabName: string; label: string}> = ({subTabName, label}) => (
+    <button
+       onClick={() => setActiveOfflineSubTab(subTabName)}
+       className={`w-full px-4 py-2 text-sm font-medium rounded-md focus:outline-none transition-colors ${
+           activeOfflineSubTab === subTabName
+               ? 'bg-white text-blue-700 shadow-sm'
+               : 'text-gray-500 hover:bg-gray-200'
+       }`}
+       aria-selected={activeOfflineSubTab === subTabName}
+       role="tab"
+   >
+       {label}
+   </button>
+);
    
     const formatBytes = (bytes: number, decimals = 2) => {
         if (!bytes || bytes === 0) return '0 Bytes';
@@ -440,7 +455,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                        <TabButton tabName="offline" label={t('settings.tabOffline')} />
                        <TabButton tabName="speech" label={t('settings.tabSpeech')} />
                        <TabButton tabName="tts" label={t('settings.tabTts')} />
-                       <TabButton tabName="offline-params" label={t('settings.tabOfflineParams')} />
                        <TabButton tabName="ocr" label={t('settings.tabOcr')} />
                     </nav>
                 </div>
@@ -505,31 +519,65 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                     )}
                     {activeTab === 'offline' && (
-                        <div role="tabpanel" id="offline-settings" aria-labelledby="offline-tab" className="space-y-6">
-                             <div className="space-y-3">
-                                <label className="block text-sm font-medium text-gray-700">{t('settings.manageModelsLabel')}</label>
-                                {OFFLINE_MODELS.filter(m => m.value).map(model => (
-                                    <div key={model.value}>
-                                        {renderDownloadControls(model)}
+                        <div role="tabpanel" id="offline-settings" aria-labelledby="offline-tab" className="space-y-4">
+                            <div className="flex space-x-1 p-1 bg-gray-100 rounded-lg">
+                                <SubTabButton subTabName="models" label={t('settings.subTabModels')} />
+                                <SubTabButton subTabName="params" label={t('settings.subTabParameters')} />
+                            </div>
+                            {activeOfflineSubTab === 'models' && (
+                                <div className="space-y-6 pt-2">
+                                    <div className="space-y-3">
+                                        <label className="block text-sm font-medium text-gray-700">{t('settings.manageModelsLabel')}</label>
+                                        {OFFLINE_MODELS.filter(m => m.value).map(model => (
+                                            <div key={model.value}>
+                                                {renderDownloadControls(model)}
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                            <div className="space-y-4 pt-2">
-                                <ToggleSwitch 
-                                    id="offline-toggle"
-                                    isEnabled={isOfflineEnabled}
-                                    setIsEnabled={setIsOfflineEnabled}
-                                    title={t('settings.enableOfflineLabel')}
-                                    description={t('settings.enableOfflineDescription')}
-                                />
-                                <ToggleSwitch 
-                                    id="twostep-toggle"
-                                    isEnabled={isTwoStepJpCnEnabled}
-                                    setIsEnabled={setIsTwoStepJpCnEnabled}
-                                    title={t('settings.enableTwoStepLabel')}
-                                    description={t('settings.enableTwoStepDescription')}
-                                />
-                            </div>
+                                    <div className="space-y-4 pt-2">
+                                        <ToggleSwitch 
+                                            id="offline-toggle"
+                                            isEnabled={isOfflineEnabled}
+                                            setIsEnabled={setIsOfflineEnabled}
+                                            title={t('settings.enableOfflineLabel')}
+                                            description={t('settings.enableOfflineDescription')}
+                                        />
+                                        <ToggleSwitch 
+                                            id="twostep-toggle"
+                                            isEnabled={isTwoStepJpCnEnabled}
+                                            setIsEnabled={setIsTwoStepJpCnEnabled}
+                                            title={t('settings.enableTwoStepLabel')}
+                                            description={t('settings.enableTwoStepDescription')}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                            {activeOfflineSubTab === 'params' && (
+                                <div className="space-y-6 pt-2">
+                                    <p className="text-sm text-gray-500">{t('settings.offlineParamsDescription')}</p>
+                                    <Slider id="max-tokens-slider" label={t('settings.maxTokensLabel')} value={offlineMaxTokens} onChange={e => setOfflineMaxTokens(parseInt(e.target.value, 10))} min={256} max={8192} step={256} />
+                                    <Slider id="top-k-slider" label={t('settings.topKLabel')} value={offlineTopK} onChange={e => setOfflineTopK(parseInt(e.target.value, 10))} min={1} max={100} step={1} />
+                                    <Slider id="temperature-slider" label={t('settings.temperatureLabel')} value={offlineTemperature} onChange={e => setOfflineTemperature(parseFloat(e.target.value))} min={0} max={1} step={0.05} />
+                                    <div>
+                                        <label htmlFor="random-seed" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.randomSeedLabel')}</label>
+                                        <input type="number" id="random-seed" value={offlineRandomSeed} onChange={e => setOfflineRandomSeed(parseInt(e.target.value, 10))} className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+                                    </div>
+                                    <ToggleSwitch id="max-num-images-toggle" isEnabled={offlineMaxNumImages === 1} setIsEnabled={(enabled) => setOfflineMaxNumImages(enabled ? 1 : 0)} title={t('settings.maxNumImagesLabel')} description={t('settings.maxNumImagesDescription')} />
+                                    <ToggleSwitch 
+                                        id="support-audio-toggle" 
+                                        isEnabled={offlineSupportAudio} 
+                                        setIsEnabled={(enabled) => {
+                                            setOfflineSupportAudio(enabled);
+                                            if (enabled) {
+                                                setIsOfflineAsrEnabled(false);
+                                            }
+                                        }} 
+                                        title={t('settings.enableGemmaAudioLabel')} 
+                                        description={t('settings.enableGemmaAudioDescription')} 
+                                        disabled={!isOfflineEnabled}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                     {activeTab === 'speech' && (
@@ -539,10 +587,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 isEnabled={isWebSpeechApiEnabled}
                                 setIsEnabled={(enabled) => {
                                     setIsWebSpeechApiEnabled(enabled);
-                                    if (enabled) {
-                                        // Web Speech API is independent of others, but usually preferred if available online.
-                                        // We don't necessarily force disable Whisper, but App.tsx logic prioritizes.
-                                    }
                                 }}
                                 title={t('settings.enableWebSpeechLabel')}
                                 description={t('settings.enableWebSpeechDescription')}
@@ -555,14 +599,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 setIsEnabled={(enabled) => {
                                     setIsOfflineAsrEnabled(enabled);
                                     if (enabled) {
-                                        // Disable Gemma Audio to prevent conflict
                                         setOfflineSupportAudio(false);
                                     }
                                 }}
                                 title={t('settings.enableOfflineAsrLabel')}
                                 description={t('settings.enableOfflineAsrDescription')}
                              />
-                            {/* ASR Model Management */}
                             <div className={`space-y-3 transition-opacity ${!isOfflineAsrEnabled ? 'opacity-50' : ''}`}>
                                 <label className={`block text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>{t('settings.asrModelLabel')}</label>
                                 {ASR_MODELS.map(model => {
@@ -624,7 +666,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                             <div className="border-t border-gray-200"></div>
 
-                            {/* Audio Processing Settings */}
                              <div className={`space-y-4 transition-opacity ${!isOfflineAsrEnabled ? 'opacity-50' : ''}`}>
                                 <label className={`block text-sm font-medium -mb-2 ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>{t('settings.audioProcessingLabel')}</label>
                                  <ToggleSwitch
@@ -651,29 +692,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                     />
                                  </div>
                             </div>
-
-                            <div className="border-t border-gray-200"></div>
-                            
-                            <ToggleSwitch 
-                                id="support-audio-toggle" 
-                                isEnabled={offlineSupportAudio} 
-                                setIsEnabled={(enabled) => {
-                                    setOfflineSupportAudio(enabled);
-                                    if (enabled) {
-                                        // Disable Whisper to prevent conflict
-                                        setIsOfflineAsrEnabled(false);
-                                    }
-                                }} 
-                                title={t('settings.enableGemmaAudioLabel')} 
-                                description={t('settings.enableGemmaAudioDescription')} 
-                                disabled={!isOfflineEnabled}
-                            />
-                            {!isOfflineEnabled && (
-                                <p className="text-xs text-amber-600 mt-1 ml-1">
-                                    * Requires "Enable Offline Translation" to be ON.
-                                </p>
-                            )}
-
                         </div>
                     )}
                     {activeTab === 'tts' && (
@@ -709,24 +727,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                              <Slider id="rate-slider" label={t('settings.rateLabel')} value={offlineTtsRate} onChange={e => setOfflineTtsRate(parseFloat(e.target.value))} min={0.5} max={2} step={0.1} />
                              <Slider id="pitch-slider" label={t('settings.pitchLabel')} value={offlineTtsPitch} onChange={e => setOfflineTtsPitch(parseFloat(e.target.value))} min={0} max={2} step={0.1} />
-                        </div>
-                    )}
-                     {activeTab === 'offline-params' && (
-                        <div role="tabpanel" id="offline-params-settings" aria-labelledby="offline-params-tab" className="space-y-6">
-                            <p className="text-sm text-gray-500">{t('settings.offlineParamsDescription')}</p>
-                            
-                            <Slider id="max-tokens-slider" label={t('settings.maxTokensLabel')} value={offlineMaxTokens} onChange={e => setOfflineMaxTokens(parseInt(e.target.value, 10))} min={256} max={8192} step={256} />
-
-                            <Slider id="top-k-slider" label={t('settings.topKLabel')} value={offlineTopK} onChange={e => setOfflineTopK(parseInt(e.target.value, 10))} min={1} max={100} step={1} />
-
-                            <Slider id="temperature-slider" label={t('settings.temperatureLabel')} value={offlineTemperature} onChange={e => setOfflineTemperature(parseFloat(e.target.value))} min={0} max={1} step={0.05} />
-
-                            <div>
-                                <label htmlFor="random-seed" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.randomSeedLabel')}</label>
-                                <input type="number" id="random-seed" value={offlineRandomSeed} onChange={e => setOfflineRandomSeed(parseInt(e.target.value, 10))} className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-                            </div>
-
-                            <ToggleSwitch id="max-num-images-toggle" isEnabled={offlineMaxNumImages === 1} setIsEnabled={(enabled) => setOfflineMaxNumImages(enabled ? 1 : 0)} title={t('settings.maxNumImagesLabel')} description={t('settings.maxNumImagesDescription')} />
                         </div>
                     )}
                     {activeTab === 'ocr' && (
