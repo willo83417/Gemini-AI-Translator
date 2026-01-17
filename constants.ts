@@ -1,4 +1,3 @@
-
 import type { Language, AsrModel } from './types';
 
 export const LANGUAGES: Language[] = [
@@ -21,13 +20,16 @@ export const OFFLINE_MODELS = [
         name: 'Gemma-3n-E2B (3.04 GB)', 
         value: 'gemma-3n-E2B-it-int4-Web.litertlm', 
         url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-3n-E2B-it-int4-Web.litertlm'
-        //url: 'https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4-Web.litertlm'
     },
     { 
         name: 'Gemma-3n-E4B (4.28 GB)', 
         value: 'gemma-3n-E4B-it-int4-Web.litertlm', 
         url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm'
-        //url: 'https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm'
+    },
+	{ 
+        name: 'Gemma-3-4B (2.4 GB)', 
+        value: 'gemma3-4b-it-int4-web.task', 
+        url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma3-4b-it-int4-web.task'
     },
 ];
 

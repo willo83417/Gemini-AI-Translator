@@ -131,16 +131,7 @@
 	if (typeof (self as any).OfflineAudioContext === 'undefined') {
 		(self as any).OfflineAudioContext = (self as any).AudioContext;
 	}
-
-	// Per user request, load the library using importScripts for a classic worker environment.
-	//self.exports = {};
-	//importScripts("/public/genai_bundle.js"); //Development and Testing;開發測試
-	//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用
-	//const { FilesetResolver, LlmInference } = self.exports;
-
 	const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm";
-
-	// FIX: Use `LlmInference` directly as the type, as `InstanceType` is not compatible with classes that have private constructors.
 	let llmInference: LlmInference | null = null;
 	let currentTaskAbortController: AbortController | null = null;
 
@@ -165,7 +156,7 @@ const handleInit = async (payload: any) => {
         const filesetResolver = await FilesetResolver.forGenAiTasks(MEDIAPIPE_WASM);
 
         const { 
-            maxTokens = 4096, topK = 40, temperature = 0.3, randomSeed = 101, supportAudio = false, maxNumImages = 1
+            maxTokens = 2048, topK = 40, temperature = 0.3, randomSeed = 10, supportAudio = false, maxNumImages = 0
         } = options;
         
         llmInference = await LlmInference.createFromOptions(filesetResolver, {

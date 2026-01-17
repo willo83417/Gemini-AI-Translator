@@ -252,7 +252,7 @@ const App: React.FC = () => {
     const [offlineMaxTokens, setOfflineMaxTokens] = useState(4096);
     const [offlineTopK, setOfflineTopK] = useState(40);
     const [offlineTemperature, setOfflineTemperature] = useState(0.3);
-    const [offlineRandomSeed, setOfflineRandomSeed] = useState(101);
+    const [offlineRandomSeed, setOfflineRandomSeed] = useState(10);
     const [offlineSupportAudio, setOfflineSupportAudio] = useState(false);
     const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(0);
 
@@ -272,8 +272,12 @@ const App: React.FC = () => {
     const [isAwaitingAstTranslation, setIsAwaitingAstTranslation] = useState(false);
 
     // OCR State
-    const { status: ocrEngineStatus, error: ocrEngineError, recognize, initializeOcr } = usePaddleOcr();
+    const { status: ocrEngineStatus, error: ocrEngineError, recognize, initializeOcr, unloadOcr } = usePaddleOcr();
     const [selectedOcrModel, setSelectedOcrModel] = useState<keyof typeof OCR_MODELS>('ch_v5');
+    const [isOcrAutoInitEnabled, setIsOcrAutoInitEnabled] = useState(false);
+
+    // Sequential Loading Queue
+    const [loadingQueue, setLoadingQueue] = useState<string[]>([]);
 
 
     type NotificationType = 'error' | 'success' | 'info';
@@ -695,28 +699,6 @@ const App: React.FC = () => {
         };
     }, [isOfflineAsrEnabled, initializeAsrWorker]);
 
-    // Effect to auto-load a cached ASR model when it's selected and the worker is ready
-    useEffect(() => {
-        if (isOfflineAsrEnabled && asrWorkerRef.current && asrModelId && !isAsrInitialized && !isAsrInitializing) {
-            const loadModel = async () => {
-                const isCached = await checkAsrModelCacheStatus(asrModelId);
-                if (isCached) {
-                    const model = ASR_MODELS.find(m => m.id === asrModelId);
-                    if (model) {
-                        console.log(`Auto-loading cached ASR model: ${model.id}`);
-                        setIsAsrInitializing(true);
-                        setAsrLoadingProgress({ file: '', progress: 0 });
-                        asrWorkerRef.current.postMessage({
-                            type: 'load',
-                            payload: { modelId: model.id, quantization: model.quantization }
-                        });
-                    }
-                }
-            };
-            loadModel();
-        }
-    }, [isOfflineAsrEnabled, asrModelId, isAsrInitialized, isAsrInitializing]);
-
 
     // --- Common Effects ---
     useEffect(() => {
@@ -828,6 +810,9 @@ const App: React.FC = () => {
             setSelectedOcrModel(savedOcrModel as keyof typeof OCR_MODELS);
         }
 
+        const savedOcrAutoInit = localStorage.getItem('is-ocr-auto-init-enabled');
+        if (savedOcrAutoInit) setIsOcrAutoInitEnabled(JSON.parse(savedOcrAutoInit));
+
         try {
             const savedHistory = localStorage.getItem('translation-history');
             if (savedHistory) setHistory(JSON.parse(savedHistory));
@@ -842,58 +827,100 @@ const App: React.FC = () => {
         loadVoices();
     }, []);
 
-    // Logic to load/unload MediaPipe LLM
+    // --- Loading Queue Logic ---
+
+    // Queue LLM initialization
     useEffect(() => {
         const modelToLoad = isModelDownloaded ? offlineModelName : null;
-    
-        if (!isOfflineModeEnabled || !modelToLoad) {
-            if ((isOfflineModelInitialized || isOfflineModelInitializing) && workerRef.current) {
+        if (isOfflineModeEnabled && modelToLoad && !isOfflineModelInitialized && !isOfflineModelInitializing) {
+            setLoadingQueue(q => [...q, 'llm']);
+        }
+    }, [isModelDownloaded, offlineModelName, isOfflineModeEnabled, isOfflineModelInitialized, isOfflineModelInitializing]);
+
+    // Unload LLM when disabled
+    useEffect(() => {
+        if (!isOfflineModeEnabled && (isOfflineModelInitialized || isOfflineModelInitializing)) {
+            if (workerRef.current) {
                 console.log('Requesting offline model unload.');
                 workerRef.current.postMessage({ type: 'unload' });
             }
-            return;
+        }
+    }, [isOfflineModeEnabled, isOfflineModelInitialized, isOfflineModelInitializing]);
+
+    // Queue ASR initialization
+    useEffect(() => {
+        if (isOfflineAsrEnabled && asrModelId && !isAsrInitialized && !isAsrInitializing) {
+            const checkAndQueue = async () => {
+                const isCached = await checkAsrModelCacheStatus(asrModelId);
+                if (isCached) {
+                    setLoadingQueue(q => [...q, 'asr']);
+                }
+            };
+            checkAndQueue();
+        }
+    }, [isOfflineAsrEnabled, asrModelId, isAsrInitialized, isAsrInitializing]);
+    
+    // Queue OCR initialization
+    useEffect(() => {
+        if (isOcrAutoInitEnabled && ocrEngineStatus === 'uninitialized') {
+             setLoadingQueue(q => [...q, 'ocr']);
+        }
+    }, [isOcrAutoInitEnabled, ocrEngineStatus]);
+
+    // Unload OCR when auto-init is disabled
+    const unloadOcrCallback = useCallback(unloadOcr, [unloadOcr]);
+    useEffect(() => {
+        if (!isOcrAutoInitEnabled && ocrEngineStatus !== 'uninitialized') {
+            unloadOcrCallback();
+        }
+    }, [isOcrAutoInitEnabled, ocrEngineStatus, unloadOcrCallback]);
+
+    // Central orchestrator for the loading queue
+    useEffect(() => {
+        const isBusy = isOfflineModelInitializing || isAsrInitializing || ocrEngineStatus === 'initializing';
+        if (isBusy || loadingQueue.length === 0) {
+            return; // Wait until the current task is done or if the queue is empty
         }
 
-        const initModel = async () => {
+        const nextTask = loadingQueue[0];
+        
+        // Dequeue the task
+        setLoadingQueue(q => q.slice(1));
+
+        console.log(`[Orchestrator] Starting next task: ${nextTask}`);
+
+        if (nextTask === 'llm') {
+            const modelToLoad = offlineModelName;
             setIsOfflineModelInitializing(true);
             setIsOfflineModelInitialized(false);
-            try {
-                const modelBlob = await downloadManager.getModelAsBlob(modelToLoad);
-                if (!modelBlob) {
-                    throw new Error(`Model blob for ${modelToLoad} not found.`);
-                }
-                
+            downloadManager.getModelAsBlob(modelToLoad).then(modelBlob => {
+                if (!modelBlob) throw new Error(`Model blob for ${modelToLoad} not found.`);
                 const options = {
-                    maxTokens: offlineMaxTokens,
-                    topK: offlineTopK,
-                    temperature: offlineTemperature,
-                    randomSeed: offlineRandomSeed,
-                    supportAudio: offlineSupportAudio,
-                    maxNumImages: offlineMaxNumImages,
+                    maxTokens: offlineMaxTokens, topK: offlineTopK, temperature: offlineTemperature,
+                    randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, maxNumImages: offlineMaxNumImages,
                 };
-                
-                const worker = getOrCreateWorker();
-                worker.postMessage({
-                    type: 'init',
-                    payload: { modelBlob, modelSource: modelToLoad, options }
-                });
-
-            } catch (err) {
+                getOrCreateWorker().postMessage({ type: 'init', payload: { modelBlob, modelSource: modelToLoad, options } });
+            }).catch(err => {
                 const message = err instanceof Error ? err.message : t('notifications.offlineModelInitFailed');
                 showNotification(message, 'error');
-                console.error('Offline model init failed (main thread):', err);
-                setIsOfflineModelInitialized(false);
                 setIsOfflineModelInitializing(false);
+            });
+        } else if (nextTask === 'asr') {
+            const model = ASR_MODELS.find(m => m.id === asrModelId);
+            if (model && asrWorkerRef.current) {
+                setIsAsrInitializing(true);
+                setAsrLoadingProgress({ file: '', progress: 0 });
+                asrWorkerRef.current.postMessage({ type: 'load', payload: { modelId: model.id, quantization: model.quantization } });
             }
-        };
-        
-        initModel();
-    
+        } else if (nextTask === 'ocr') {
+            const ocrModelConfig = { key: selectedOcrModel, ...OCR_MODELS[selectedOcrModel].paths };
+            initializeOcr(ocrModelConfig);
+        }
     }, [
-        isModelDownloaded, offlineModelName, isOfflineModeEnabled, 
-        showNotification, t, getOrCreateWorker,
-        offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed,
-        offlineSupportAudio, offlineMaxNumImages
+        loadingQueue, isOfflineModelInitializing, isAsrInitializing, ocrEngineStatus,
+        offlineModelName, asrModelId, selectedOcrModel,
+        offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages,
+        getOrCreateWorker, initializeOcr, showNotification, t
     ]);
 
 
@@ -1429,6 +1456,7 @@ const App: React.FC = () => {
         newIsNoiseCancellationEnabled: boolean,
         newAudioGainValue: number,
         newSelectedOcrModel: keyof typeof OCR_MODELS,
+        newIsOcrAutoInitEnabled: boolean
     ) => {
         setApiKey(newApiKey);
         setModelName(newModelName);
@@ -1454,6 +1482,7 @@ const App: React.FC = () => {
         setIsNoiseCancellationEnabled(newIsNoiseCancellationEnabled);
         setAudioGainValue(newAudioGainValue);
         setSelectedOcrModel(newSelectedOcrModel);
+        setIsOcrAutoInitEnabled(newIsOcrAutoInitEnabled);
         
         localStorage.setItem('api-key', newApiKey);
         localStorage.setItem('model-name', newModelName);
@@ -1479,6 +1508,7 @@ const App: React.FC = () => {
         localStorage.setItem('is-noise-cancellation-enabled', JSON.stringify(newIsNoiseCancellationEnabled));
         localStorage.setItem('audio-gain-value', JSON.stringify(newAudioGainValue));
         localStorage.setItem('selected-ocr-model', newSelectedOcrModel);
+        localStorage.setItem('is-ocr-auto-init-enabled', JSON.stringify(newIsOcrAutoInitEnabled));
     };
 
     const handleSelectHistory = (item: TranslationHistoryItem) => {
@@ -1655,6 +1685,7 @@ const App: React.FC = () => {
                 ocrEngineError={ocrEngineError}
                 onInitializeOcr={initializeOcr}
                 currentSelectedOcrModel={selectedOcrModel}
+                currentIsOcrAutoInitEnabled={isOcrAutoInitEnabled}
             />
 
             <HistoryModal

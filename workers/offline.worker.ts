@@ -103,11 +103,8 @@ self.onmessage = async (event: MessageEvent) => {
 
     switch (type) {
         case 'init':
-            // The worker is created on-demand here ("lazy initialization").
-            // This block handles both the initial creation and re-creation after an 'unload' command.
             if (!inferenceWorker) {
                 console.log('Controller: Creating inference worker...');
-                // Use the `?url` suffix to tell Vite to provide the asset URL instead of bundling.
                 inferenceWorker = new Worker(new URL('./worker.ts?url', import.meta.url), { type: 'classic' });
                 setupInferenceWorkerListeners();
             }
@@ -116,11 +113,14 @@ self.onmessage = async (event: MessageEvent) => {
 
         case 'unload':
             if (inferenceWorker) {
-                console.log('Controller: Received unload command. Terminating inference worker to release VRAM.');
-                inferenceWorker.terminate();
-                inferenceWorker = null; // CRITICAL: Set to null to release reference and allow re-creation.
+                console.log('Controller: Forwarding unload command to inference worker for graceful shutdown.');
+                // Forward the unload command to the inference worker to allow it to clean up GPU resources.
+                inferenceWorker.postMessage({ type: 'unload' });
+            } else {
+                // If there's no worker, we can consider it already unloaded.
+                console.log('Controller: Unload called but no inference worker exists.');
+                self.postMessage({ type: 'unload_done' });
             }
-            self.postMessage({ type: 'unload_done' });
             break;
 
         case 'transcribe':

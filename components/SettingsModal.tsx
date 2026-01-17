@@ -33,7 +33,8 @@ interface SettingsModalProps {
         offlineMaxNumImages: number,
         isNoiseCancellationEnabled: boolean,
         audioGainValue: number,
-        selectedOcrModel: keyof typeof OCR_MODELS
+        selectedOcrModel: keyof typeof OCR_MODELS,
+        isOcrAutoInitEnabled: boolean,
     ) => void;
     currentApiKey: string;
     currentModelName: string;
@@ -77,6 +78,7 @@ interface SettingsModalProps {
     ocrEngineError: string | null;
     onInitializeOcr: (modelConfig: OcrModelConfig) => Promise<void>;
     currentSelectedOcrModel: keyof typeof OCR_MODELS;
+    currentIsOcrAutoInitEnabled: boolean;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
@@ -123,6 +125,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     ocrEngineError,
     onInitializeOcr,
     currentSelectedOcrModel,
+    currentIsOcrAutoInitEnabled,
 }) => {
     const { t, i18n } = useTranslation();
     const [activeTab, setActiveTab] = useState('online');
@@ -162,6 +165,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     
     // OCR State
     const [selectedOcrModel, setSelectedOcrModel] = useState(currentSelectedOcrModel);
+    const [isOcrAutoInitEnabled, setIsOcrAutoInitEnabled] = useState(currentIsOcrAutoInitEnabled);
+
 
     useEffect(() => {
         if (isOpen) {
@@ -197,6 +202,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             
             // OCR
             setSelectedOcrModel(currentSelectedOcrModel);
+            setIsOcrAutoInitEnabled(currentIsOcrAutoInitEnabled);
         }
     }, [
         isOpen, currentApiKey, currentModelName, currentOnlineProvider, currentOpenaiApiUrl, 
@@ -205,7 +211,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         currentOfflineTtsRate, currentOfflineTtsPitch, currentOfflineMaxTokens, currentOfflineTopK, 
         currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, 
         currentOfflineMaxNumImages, currentIsOfflineAsrEnabled, currentIsWebSpeechApiEnabled,
-        currentAsrModelId, currentIsNoiseCancellationEnabled, currentAudioGainValue, currentSelectedOcrModel
+        currentAsrModelId, currentIsNoiseCancellationEnabled, currentAudioGainValue, currentSelectedOcrModel,
+        currentIsOcrAutoInitEnabled
     ]);
     
     useEffect(() => {
@@ -225,7 +232,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             apiKey, modelName, huggingFaceApiKey, offlineModelName, asrModelId, isOfflineEnabled, isOfflineAsrEnabled, isWebSpeechApiEnabled, onlineProvider, openaiApiUrl,
             isOfflineTtsEnabled, offlineTtsVoiceURI, offlineTtsRate, offlineTtsPitch, isTwoStepJpCnEnabled,
             offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages,
-            isNoiseCancellationEnabled, audioGainValue, selectedOcrModel
+            isNoiseCancellationEnabled, audioGainValue, selectedOcrModel, isOcrAutoInitEnabled
         );
         onClose();
     };
@@ -246,10 +253,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setOfflineMaxTokens(4096);
         setOfflineTopK(40);
         setOfflineTemperature(0.3);
-        setOfflineRandomSeed(101);
+        setOfflineRandomSeed(10);
         setOfflineSupportAudio(false);
         setOfflineMaxNumImages(0);
         setSelectedOcrModel('ch_v5');
+        setIsOcrAutoInitEnabled(false);
         
         // Clear ASR
         setIsOfflineAsrEnabled(false);
@@ -260,7 +268,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onClearAsrCache();
 
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
-        onSave('', 'gemini-2.5-flash', '', '', ASR_MODELS[0].id, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 101, false, 0, false, 1.0, 'ch_v5');
+        onSave('', 'gemini-2.5-flash', '', '', ASR_MODELS[0].id, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, 0, false, 0, 'ch_v5', false);
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -731,29 +739,38 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
                     {activeTab === 'ocr' && (
                         <div role="tabpanel" id="ocr-settings" aria-labelledby="ocr-tab" className="space-y-6">
-                             <div>
-                                <label htmlFor="ocr-model-select" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.ocrModelLabel')}</label>
-                                <select 
-                                    id="ocr-model-select"
-                                    value={selectedOcrModel} 
-                                    onChange={(e) => setSelectedOcrModel(e.target.value as any)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                            <ToggleSwitch
+                                id="ocr-auto-init-toggle"
+                                isEnabled={isOcrAutoInitEnabled}
+                                setIsEnabled={setIsOcrAutoInitEnabled}
+                                title={t('settings.enableOcrAutoInitLabel')}
+                                description={t('settings.enableOcrAutoInitDescription')}
+                            />
+                            <div className="border-t pt-6 space-y-6">
+                                <div>
+                                    <label htmlFor="ocr-model-select" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.ocrModelLabel')}</label>
+                                    <select 
+                                        id="ocr-model-select"
+                                        value={selectedOcrModel} 
+                                        onChange={(e) => setSelectedOcrModel(e.target.value as any)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        {Object.entries(OCR_MODELS).map(([k, m]) => <option key={k} value={k}>{m.description}</option>)}
+                                    </select>
+                                </div>
+                                <button 
+                                    onClick={handleLoadOcrModel}
+                                    disabled={ocrEngineStatus === 'initializing'}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-sm font-medium transition disabled:bg-indigo-300 disabled:cursor-wait"
                                 >
-                                    {Object.entries(OCR_MODELS).map(([k, m]) => <option key={k} value={k}>{m.description}</option>)}
-                                </select>
+                                    {ocrEngineStatus === 'initializing' 
+                                        ? t('common.status.initializing')
+                                        : (ocrEngineStatus === 'ready' ? t('settings.switchOcr') : t('settings.initializeOcr'))
+                                    }
+                                </button>
+                                {ocrEngineStatus === 'ready' && <p className="text-sm text-center text-green-600">OCR Engine Ready.</p>}
+                                {ocrEngineStatus === 'error' && <p className="text-sm text-center text-red-600">OCR Engine failed to initialize: {ocrEngineError}</p>}
                             </div>
-                            <button 
-                                onClick={handleLoadOcrModel}
-                                disabled={ocrEngineStatus === 'initializing'}
-                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-sm font-medium transition disabled:bg-indigo-300 disabled:cursor-wait"
-                            >
-                                {ocrEngineStatus === 'initializing' 
-                                    ? t('common.status.initializing')
-                                    : (ocrEngineStatus === 'ready' ? t('settings.switchOcr') : t('settings.initializeOcr'))
-                                }
-                            </button>
-                             {ocrEngineStatus === 'ready' && <p className="text-sm text-center text-green-600">OCR Engine Ready.</p>}
-                             {ocrEngineStatus === 'error' && <p className="text-sm text-center text-red-600">OCR Engine failed to initialize: {ocrEngineError}</p>}
                         </div>
                     )}
                 </div>

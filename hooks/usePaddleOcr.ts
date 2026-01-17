@@ -1,3 +1,4 @@
+
 import { useState, useCallback } from 'react';
 import * as ocr from "esearch-ocr";
 import * as ort from "onnxruntime-web";
@@ -9,7 +10,20 @@ export const usePaddleOcr = () => {
     const [status, setStatus] = useState<OcrEngineStatus>('uninitialized');
     const [error, setError] = useState<string | null>(null);
 
+    const unloadOcr = useCallback(() => {
+        setOcrInstance(null);
+        setStatus('uninitialized');
+        setError(null);
+        console.log("PaddleOCR engine has been unloaded.");
+    }, []);
+
     const initializeOcr = useCallback(async (modelConfig: OcrModelConfig) => {
+        // Unload any existing instance before initializing a new one.
+        if (ocrInstance) {
+            console.log("Unloading previous OCR instance before switching model.");
+            setOcrInstance(null); // Allow garbage collection
+        }
+
         setStatus('initializing');
         setError(null);
         try {
@@ -80,7 +94,7 @@ export const usePaddleOcr = () => {
                     input: new Uint8Array(recBuffer),
                     decodeDic: dictText,
 					optimize: {
-						space: false, // v3 v4识别时英文空格不理想，但v5得到了改善，默认为true，需要传入false来关闭
+						space: false, // v3 v4識別時英文空格不理想，但v5得到了改善，默認為true，需要传入false来关闭
 					}
                 },
                 ort: ortInstance,
@@ -94,7 +108,7 @@ export const usePaddleOcr = () => {
             setStatus('error');
             console.error('OCR Engine initialization error:', e);
         }
-    }, []);
+    }, [ocrInstance]); // Dependency on ocrInstance to ensure it can be unloaded
 
     const recognize = useCallback(async (image: HTMLImageElement | HTMLCanvasElement): Promise<{ result: EsearchOCROutput, time: number } | null> => {
         if (status !== 'ready' || !ocrInstance) {
@@ -113,5 +127,5 @@ export const usePaddleOcr = () => {
         }
     }, [ocrInstance, status]);
 
-    return { status, error, recognize, initializeOcr };
+    return { status, error, recognize, initializeOcr, unloadOcr };
 };
