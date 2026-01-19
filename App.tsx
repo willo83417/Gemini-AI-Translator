@@ -220,7 +220,7 @@ const App: React.FC = () => {
     
     // Shared settings
     const [apiKey, setApiKey] = useState('');
-    const [modelName, setModelName] = useState('gemini-2.5-flash');
+    const [modelName, setModelName] = useState('gemini-3-flash-preview');
 
     // Online provider settings
     const [onlineProvider, setOnlineProvider] = useState('gemini');

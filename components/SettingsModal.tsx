@@ -239,7 +239,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const handleClear = () => {
         setApiKey('');
-        setModelName('gemini-2.5-flash');
+        setModelName('gemini-3-flash-preview');
         setOnlineProvider('gemini');
         setOpenaiApiUrl('');
         setHuggingFaceApiKey('');
@@ -268,7 +268,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onClearAsrCache();
 
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
-        onSave('', 'gemini-2.5-flash', '', '', ASR_MODELS[0].id, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, 0, false, 0, 'ch_v5', false);
+        onSave('', 'gemini-3-flash-preview', '', '', ASR_MODELS[0].id, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, 0, false, 0, 'ch_v5', false);
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {

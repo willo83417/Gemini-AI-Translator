@@ -131,7 +131,7 @@
 	if (typeof (self as any).OfflineAudioContext === 'undefined') {
 		(self as any).OfflineAudioContext = (self as any).AudioContext;
 	}
-	const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.25/wasm";
+	const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.26/wasm";
 	let llmInference: LlmInference | null = null;
 	let currentTaskAbortController: AbortController | null = null;
 

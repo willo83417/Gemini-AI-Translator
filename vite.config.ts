@@ -24,7 +24,6 @@ export default defineConfig(({ mode }) => {
         chunkSizeWarningLimit: 2000, // Increase limit to 2000 kB
         rollupOptions: {
           output: {
-            /*
             // Optional: Uncomment to group vendor libraries into a single chunk.
             // This can improve caching for PWA updates, as vendor code changes less often.
             manualChunks(id) {
@@ -32,7 +31,6 @@ export default defineConfig(({ mode }) => {
                 return 'vendor';
               }
             }
-            */
           },
         },
       },
@@ -100,13 +98,13 @@ export default defineConfig(({ mode }) => {
         start_url: ".",
         icons: [
           {
-            "src": "/images/icon-192.png",
+            "src": "images/icon-192.png",
             "sizes": "192x192",
             "type": "image/png",
             "purpose": "any maskable"
           },
           {
-            "src": "/images/icon-512.png",
+            "src": "images/icon-512.png",
             "sizes": "512x512",
             "type": "image/png"
           }
