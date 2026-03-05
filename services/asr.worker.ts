@@ -20,9 +20,9 @@ const post = (message: AppMessage) => self.postMessage(message);
 
 // Maps specific language codes to prompts that guide the Whisper model's output format.
 const PROMPT_MAP: Record<string, string> = {
-    'zh-TW': '請使用繁體中文輸出。',
-    'zh-HK': '請使用香港繁體中文輸出。',
-    'zh-CN': '请使用简体中文输出。'
+    'zh-Hant': '請使用繁體中文輸出。',
+    'zh-Hant-HK': '請使用香港繁體中文輸出。',
+    'zh-Hans': '请使用简体中文输出。'
 };
 
 class Transcriber {

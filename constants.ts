@@ -3,9 +3,9 @@ import type { Language, AsrModel } from './types';
 export const LANGUAGES: Language[] = [
     { code: 'auto', name: 'languages.autoDetect' },
     { code: 'en', name: 'languages.english', asrCode: 'en' },
-    { code: 'zh-TW', name: 'languages.chineseTraditional', asrCode: 'zh' },
-    { code: 'zh-HK', name: 'languages.chineseTraditionalHK', asrCode: 'zh' },
-    { code: 'zh-CN', name: 'languages.chineseSimplified', asrCode: 'zh' },
+    { code: 'zh-Hant', name: 'languages.chineseTraditional', asrCode: 'zh' },
+    { code: 'zh-Hant-HK', name: 'languages.chineseTraditionalHK', asrCode: 'zh' },
+    { code: 'zh-Hans', name: 'languages.chineseSimplified', asrCode: 'zh' },
     { code: 'es', name: 'languages.spanish', asrCode: 'es' },
     { code: 'ja', name: 'languages.japanese', asrCode: 'ja' },
     { code: 'fr', name: 'languages.french', asrCode: 'fr' },
@@ -30,6 +30,11 @@ export const OFFLINE_MODELS = [
         name: 'Gemma-3-4B (2.4 GB)', 
         value: 'gemma3-4b-it-int4-web.task', 
         url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma3-4b-it-int4-web.task'
+    },
+	{ 
+        name: 'TranslateGemma-4B-IT-int8 (3.62 GB)', 
+        value: 'translategemma-4b-it-int8-web.task', 
+        url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/translategemma-4b-it-int8-web.task'
     },
 ];
 
