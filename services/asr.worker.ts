@@ -20,15 +20,19 @@ const post = (message: AppMessage) => self.postMessage(message);
 
 // Maps specific language codes to prompts that guide the Whisper model's output format.
 const PROMPT_MAP: Record<string, string> = {
-    'zh-Hant': '請使用繁體中文輸出。',
-    'zh-Hant-HK': '請使用香港繁體中文輸出。',
-    'zh-Hans': '请使用简体中文输出。'
+    'zh-Hant': '請使用(zh-Hant)繁體中文輸出。',
+    'zh-Hant-HK': '請使用(zh-Hant-HK)香港繁體中文輸出。',
+    'zh-Hans': '请使用(zh-Hans)简体中文输出。'
 };
 
 class Transcriber {
     private transcriber: any = null;
     private loading: boolean = false;
     private currentModelId: string | null = null;
+    private processingQueue: Array<{ audioData: Float32Array, asrLanguage: string, promptLanguage: string, isFinal: boolean }> = [];
+    private isProcessing: boolean = false;
+    private abortCurrent: boolean = false;
+    private currentProcessingIsFinal: boolean = false;
 
     async load(payload: { modelId: string, quantization: any }) {
         const { modelId, quantization } = payload;
@@ -56,9 +60,14 @@ class Transcriber {
                 this.transcriber = null;
             }
 
+            let lastProgressTime = 0;
             this.transcriber = await pipeline('automatic-speech-recognition', modelId, {
                 progress_callback: (progress: any) => {
-                     post({ type: 'progress', payload: progress });
+                     const now = Date.now();
+                     if (now - lastProgressTime > 100 || progress.status === 'done') {
+                         post({ type: 'progress', payload: progress });
+                         lastProgressTime = now;
+                     }
                 },
                 dtype: quantization,
                 device: "webgpu",
@@ -77,13 +86,37 @@ class Transcriber {
         }
     }
 
-    async transcribe(audioData: Float32Array, asrLanguage: string, promptLanguage: string) {
+    async transcribe(audioData: Float32Array, asrLanguage: string, promptLanguage: string, isFinal: boolean = true) {
         if (!this.transcriber) {
             const errorMsg = `Transcriber not ready. The pipeline was not initialized correctly. Current model ID: ${this.currentModelId}`;
             console.error(errorMsg);
             post({ type: 'error', payload: errorMsg });
             return;
         }
+
+        // Always keep only final requests in the queue, drop previous non-final ones
+        // because the new request (whether final or non-final) contains the latest accumulated audio.
+        this.processingQueue = this.processingQueue.filter(req => req.isFinal);
+
+        // If we are currently processing a non-final request, we can try to abort it
+        // so we can process the new request faster.
+        if (this.isProcessing && !this.currentProcessingIsFinal) {
+             this.abortCurrent = true;
+        }
+
+        this.processingQueue.push({ audioData, asrLanguage, promptLanguage, isFinal });
+        this.processQueue();
+    }
+
+    private async processQueue() {
+        if (this.isProcessing || this.processingQueue.length === 0) {
+            return;
+        }
+
+        this.isProcessing = true;
+        this.abortCurrent = false;
+        const { audioData, asrLanguage, promptLanguage, isFinal } = this.processingQueue.shift()!;
+        this.currentProcessingIsFinal = isFinal;
 
         post({ type: 'log', payload: `Starting transcription (ASR Lang: ${asrLanguage}, Prompt Lang: ${promptLanguage})...` });
 
@@ -97,6 +130,9 @@ class Transcriber {
                 skip_prompt: true,
                 skip_special_tokens: true,
                 callback_function: (text: string) => {
+                    if (this.abortCurrent) {
+                        throw new Error('ABORTED');
+                    }
                     fullTranscription += text;
                     post({ type: 'transcription-partial', payload: fullTranscription });
                 }
@@ -122,14 +158,27 @@ class Transcriber {
             
             const output = await this.transcriber(audioData, generationOptions);
             
+            if (this.abortCurrent) {
+                 throw new Error('ABORTED');
+            }
+
             // Ensure we send the final authoritative result from the pipeline output
             const finalText = (Array.isArray(output) ? output[0].text : output.text) || '';
-            post({ type: 'transcription', payload: finalText.trim() });
+            post({ type: 'transcription', payload: { text: finalText.trim(), isFinal } });
             post({ type: 'log', payload: 'Transcription completed successfully.' });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error('ASR Transcription Error:', error);
-            post({ type: 'error', payload: `Transcription error: ${errorMessage}` });
+            if (errorMessage === 'ABORTED') {
+                post({ type: 'log', payload: 'Transcription aborted for newer request.' });
+                // We don't send an error message to the UI for aborted requests
+            } else {
+                console.error('ASR Transcription Error:', error);
+                post({ type: 'error', payload: `Transcription error: ${errorMessage}` });
+            }
+        } finally {
+            this.isProcessing = false;
+            this.abortCurrent = false;
+            this.processQueue();
         }
     }
 
@@ -169,9 +218,9 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
             }
             break;
         case 'transcribe':
-            const { audio, asrLanguage, promptLanguage } = payload;
+            const { audio, asrLanguage, promptLanguage, isFinal } = payload;
             if (audio && asrLanguage !== undefined && promptLanguage !== undefined) {
-                transcriber.transcribe(audio, asrLanguage, promptLanguage);
+                transcriber.transcribe(audio, asrLanguage, promptLanguage, isFinal ?? true);
             } else {
                 post({ type: 'error', payload: 'Invalid transcribe payload: audio, asrLanguage, and promptLanguage are required.' });
             }

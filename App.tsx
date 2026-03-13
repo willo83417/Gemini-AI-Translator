@@ -259,6 +259,7 @@ const App: React.FC = () => {
     // ASR State
     const [isWebSpeechApiEnabled, setIsWebSpeechApiEnabled] = useState(true);
     const [isOfflineAsrEnabled, setIsOfflineAsrEnabled] = useState(false);
+    const [isRealtimeAsrEnabled, setIsRealtimeAsrEnabled] = useState(false);
     const [asrModelId, setAsrModelId] = useState(ASR_MODELS[0].id);
     const [isAsrInitializing, setIsAsrInitializing] = useState(false);
     const [isAsrInitialized, setIsAsrInitialized] = useState(false);
@@ -321,6 +322,7 @@ const App: React.FC = () => {
     const onStopRecordingCallbackRef = useRef<((blob: Blob) => void) | null>(null);
     // Flag to handle reverse translation logic after ASR
     const isReverseTranslateRef = useRef(false);
+    const isAsrProcessingRef = useRef(false);
 
     // --- MediaPipe Worker Logic (Offline LLM) ---
     const getOrCreateWorker = useCallback(() => {
@@ -612,6 +614,16 @@ const App: React.FC = () => {
         performReverseTranslateRef.current = performReverseTranslate;
     }, [performReverseTranslate]);
 
+    const performTranslateRef = useRef(performTranslate);
+    useEffect(() => {
+        performTranslateRef.current = performTranslate;
+    }, [performTranslate]);
+
+    const isRealtimeAsrEnabledRef = useRef(isRealtimeAsrEnabled);
+    useEffect(() => {
+        isRealtimeAsrEnabledRef.current = isRealtimeAsrEnabled;
+    }, [isRealtimeAsrEnabled]);
+
     const checkAllAsrCacheStatus = useCallback(async () => {
         const statuses: Record<string, boolean> = {};
         for (const model of ASR_MODELS) {
@@ -629,6 +641,7 @@ const App: React.FC = () => {
                 }
                 break;
             case 'error':
+                isAsrProcessingRef.current = false;
                 showNotification(payload, 'error');
                 setInputText(t('notifications.transcriptionFailed', { errorMessage: payload }));
                 setIsAsrInitializing(false);
@@ -647,17 +660,38 @@ const App: React.FC = () => {
                 setInputText(payload);
                 break;
             case 'transcription':
-                setIsTranscribing(false);
-                const transcribedText = (payload || '').trim();
-                if (transcribedText) {
-                    setInputText(transcribedText);
-                    if (isReverseTranslateRef.current) {
-                        performReverseTranslateRef.current(transcribedText);
+                isAsrProcessingRef.current = false;
+                const { text, isFinal } = payload;
+                const transcribedText = (text || '').trim();
+                
+                // Filter out common Whisper hallucinations and meaningless sounds
+                const isMeaningless = !transcribedText || 
+                    /^[^a-zA-Z0-9\p{L}]+$/u.test(transcribedText) || // Only punctuation/symbols
+                    /^[\[\(].*[\]\)]$/.test(transcribedText) || // e.g. [BLANK_AUDIO], (clears throat)
+                    ['恩', '嗯', '啊', '哦', '喔', '呃', 'um', 'uh', 'ah', 'oh'].includes(transcribedText.toLowerCase());
+                
+                if (isFinal) {
+                    setIsTranscribing(false);
+                    if (transcribedText && !isMeaningless) {
+                        setInputText(transcribedText);
+                        if (isReverseTranslateRef.current) {
+                            performReverseTranslateRef.current(transcribedText);
+                            isReverseTranslateRef.current = false;
+                        } else if (isRealtimeAsrEnabledRef.current) {
+                            performTranslateRef.current(transcribedText);
+                        }
+                    } else if (isMeaningless && transcribedText) {
+                        // If it's meaningless but not empty, just show it but don't translate
+                        setInputText(transcribedText);
+                        isReverseTranslateRef.current = false;
+                    } else {
+                        setInputText(t('notifications.transcriptionFailedEmpty'));
                         isReverseTranslateRef.current = false;
                     }
                 } else {
-                    setInputText(t('notifications.transcriptionFailedEmpty'));
-                    isReverseTranslateRef.current = false;
+                    if (transcribedText) {
+                        setInputText(transcribedText);
+                    }
                 }
                 break;
             case 'log':
@@ -789,6 +823,9 @@ const App: React.FC = () => {
         // ASR Settings
         const savedAsrEnabled = localStorage.getItem('is-offline-asr-enabled');
         if (savedAsrEnabled) setIsOfflineAsrEnabled(JSON.parse(savedAsrEnabled));
+
+        const savedRealtimeAsrEnabled = localStorage.getItem('is-realtime-asr-enabled');
+        if (savedRealtimeAsrEnabled) setIsRealtimeAsrEnabled(JSON.parse(savedRealtimeAsrEnabled));
 
         const savedWebSpeechEnabled = localStorage.getItem('is-web-speech-api-enabled');
         if (savedWebSpeechEnabled) setIsWebSpeechApiEnabled(JSON.parse(savedWebSpeechEnabled));
@@ -1026,7 +1063,7 @@ const App: React.FC = () => {
         }
     };
 
-    const handleStartRecording = (onStop: (audioBlob: Blob) => void) => {
+    const handleStartRecording = (onStop: (audioBlob: Blob) => void, onDataAvailable?: (audioBlob: Blob) => void) => {
         if (isRecording || isAstRecording) return;
 
         navigator.mediaDevices.getUserMedia({ audio: true })
@@ -1037,7 +1074,14 @@ const App: React.FC = () => {
                 mediaRecorderRef.current = recorder;
 
                 recorder.ondataavailable = event => {
-                    if (event.data.size > 0) audioChunksRef.current.push(event.data);
+                    if (event.data.size > 0) {
+                        audioChunksRef.current.push(event.data);
+                        if (onDataAvailable) {
+                            const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+                            const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+                            onDataAvailable(audioBlob);
+                        }
+                    }
                 };
 
                 recorder.onstop = () => {
@@ -1059,7 +1103,11 @@ const App: React.FC = () => {
                     setIsAstRecording(false);
                 };
 
-                recorder.start();
+                if (onDataAvailable) {
+                    recorder.start(1000); // 1 second chunks
+                } else {
+                    recorder.start();
+                }
             })
             .catch(err => {
                 showNotification(`Could not start recording: ${err.message}`, 'error');
@@ -1070,9 +1118,21 @@ const App: React.FC = () => {
 
     // Memoized Callbacks for Web Speech to prevent infinite loops
     const handleWebSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
+        const transcribedText = transcript.trim();
+        const isMeaningless = !transcribedText || 
+            /^[^a-zA-Z0-9\p{L}]+$/u.test(transcribedText) || 
+            /^[\[\(].*[\]\)]$/.test(transcribedText) || 
+            ['恩', '嗯', '啊', '哦', '喔', '呃', 'um', 'uh', 'ah', 'oh'].includes(transcribedText.toLowerCase());
+
         setInputText(transcript);
-        if (isFinal && isReverseTranslateRef.current) {
-            performReverseTranslate(transcript);
+        if (isFinal && transcribedText && !isMeaningless) {
+            if (isReverseTranslateRef.current) {
+                performReverseTranslate(transcript);
+                isReverseTranslateRef.current = false;
+            } else if (isRealtimeAsrEnabledRef.current) {
+                performTranslateRef.current(transcript);
+            }
+        } else if (isFinal && isMeaningless) {
             isReverseTranslateRef.current = false;
         }
     }, [performReverseTranslate]);
@@ -1108,7 +1168,11 @@ const App: React.FC = () => {
     }, [webSpeech]);
 
     useEffect(() => {
-        if (isRecording || isAstRecording) {
+        // Only apply 30-second countdown if realtime ASR is disabled AND we are using offline ASR (Whisper)
+        // Whisper has a strict 30-second audio limit.
+        const shouldCountdown = isOfflineAsrEnabled && !isRealtimeAsrEnabled && (isRecording || isAstRecording);
+        
+        if (shouldCountdown) {
             setRecordingCountdown(30);
             countdownTimerRef.current = window.setInterval(() => {
                 setRecordingCountdown(prev => {
@@ -1133,7 +1197,7 @@ const App: React.FC = () => {
         return () => {
             if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
         };
-    }, [isRecording, isAstRecording, stopAllRecordings]);
+    }, [isRecording, isAstRecording, stopAllRecordings, isRealtimeAsrEnabled, isOfflineAsrEnabled]);
 
 
     const handleToggleRecording = useCallback(() => {
@@ -1158,7 +1222,9 @@ const App: React.FC = () => {
             if (isOfflineAsrEnabled) {
                 // Offline ASR Path (Whisper/Sherpa)
                 handleStartRecording(async (audioBlob) => {
-                    setInputText(t('notifications.transcribing'));
+                    if (!isRealtimeAsrEnabled) {
+                        setInputText(t('notifications.transcribing'));
+                    }
                     setIsTranscribing(true);
                     try {
                         const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
@@ -1168,7 +1234,8 @@ const App: React.FC = () => {
                                 payload: { 
                                     audio: audioData, 
                                     asrLanguage: sourceLang.asrCode,
-                                    promptLanguage: sourceLang.code 
+                                    promptLanguage: sourceLang.code,
+                                    isFinal: true
                                 } 
                             });
                         } else {
@@ -1181,7 +1248,29 @@ const App: React.FC = () => {
                         const message = err instanceof Error ? err.message : 'Transcription failed.';
                         showNotification(message, 'error');
                     }
-                });
+                }, isRealtimeAsrEnabled ? async (audioBlob) => {
+                    if (isAsrProcessingRef.current) return;
+                    try {
+                        isAsrProcessingRef.current = true;
+                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
+                        if (asrWorkerRef.current) {
+                            asrWorkerRef.current.postMessage({ 
+                                type: 'transcribe', 
+                                payload: { 
+                                    audio: audioData, 
+                                    asrLanguage: sourceLang.asrCode,
+                                    promptLanguage: sourceLang.code,
+                                    isFinal: false
+                                } 
+                            });
+                        } else {
+                            isAsrProcessingRef.current = false;
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        isAsrProcessingRef.current = false;
+                    }
+                } : undefined);
             } else if (isWebSpeechApiEnabled) { 
                 webSpeech.startRecognition(sourceLang.code);
             } else if (isOfflineModeEnabled && offlineSupportAudio) {
@@ -1237,7 +1326,7 @@ const App: React.FC = () => {
                 });
             }
         }
-    }, [isRecording, isAstRecording, showNotification, t, sourceLang, isOfflineAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, isOfflineModelReady, offlineSupportAudio, getOrCreateWorker, i18n]);
+    }, [isRecording, isAstRecording, showNotification, t, sourceLang, isOfflineAsrEnabled, isRealtimeAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, isOfflineModelReady, offlineSupportAudio, getOrCreateWorker, i18n]);
 
     const handleToggleAstRecording = useCallback(() => {
         const isCurrentlyAstRecording = isAstRecording || (!isOfflineAsrEnabled && isWebSpeechApiEnabled && webSpeech.isListening && isReverseTranslateRef.current);
@@ -1262,7 +1351,9 @@ const App: React.FC = () => {
             
             if (isOfflineAsrEnabled) {
                  handleStartRecording(async (audioBlob) => {
-                    setInputText(t('notifications.transcribing'));
+                    if (!isRealtimeAsrEnabled) {
+                        setInputText(t('notifications.transcribing'));
+                    }
                     setIsTranscribing(true);
                     try {
                         const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
@@ -1272,7 +1363,8 @@ const App: React.FC = () => {
                                 payload: { 
                                     audio: audioData, 
                                     asrLanguage: targetLang.asrCode,
-                                    promptLanguage: targetLang.code 
+                                    promptLanguage: targetLang.code,
+                                    isFinal: true
                                 } 
                             });
                         } else {
@@ -1286,7 +1378,29 @@ const App: React.FC = () => {
                         const message = err instanceof Error ? err.message : 'Transcription failed.';
                         showNotification(message, 'error');
                     }
-                });
+                }, isRealtimeAsrEnabled ? async (audioBlob) => {
+                    if (isAsrProcessingRef.current) return;
+                    try {
+                        isAsrProcessingRef.current = true;
+                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
+                        if (asrWorkerRef.current) {
+                            asrWorkerRef.current.postMessage({ 
+                                type: 'transcribe', 
+                                payload: { 
+                                    audio: audioData, 
+                                    asrLanguage: targetLang.asrCode,
+                                    promptLanguage: targetLang.code,
+                                    isFinal: false
+                                } 
+                            });
+                        } else {
+                            isAsrProcessingRef.current = false;
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        isAsrProcessingRef.current = false;
+                    }
+                } : undefined);
             } else if (isWebSpeechApiEnabled) {
                 webSpeech.startRecognition(targetLang.code);
             } else if (isOfflineModeEnabled && offlineSupportAudio) {
@@ -1346,7 +1460,7 @@ const App: React.FC = () => {
                 });
             }
         }
-    }, [isAstRecording, isRecording, targetLang, showNotification, t, isOfflineAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, offlineSupportAudio, isOfflineModelReady, getOrCreateWorker, performReverseTranslate, i18n]);
+    }, [isAstRecording, isRecording, targetLang, showNotification, t, isOfflineAsrEnabled, isRealtimeAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, offlineSupportAudio, isOfflineModelReady, getOrCreateWorker, performReverseTranslate, i18n]);
 
     const handleImageCaptured = useCallback(async (imageDataUrl: string) => {
         setIsCameraOpen(false);
@@ -1439,6 +1553,7 @@ const App: React.FC = () => {
         newAsrModelId: string, 
         isOfflineEnabled: boolean,
         newIsOfflineAsrEnabled: boolean,
+        newIsRealtimeAsrEnabled: boolean,
         newIsWebSpeechApiEnabled: boolean,
         newOnlineProvider: string,
         newOpenaiApiUrl: string,
@@ -1467,6 +1582,7 @@ const App: React.FC = () => {
         setAsrModelId(newAsrModelId);
         setIsOfflineModeEnabled(isOfflineEnabled);
         setIsOfflineAsrEnabled(newIsOfflineAsrEnabled);
+        setIsRealtimeAsrEnabled(newIsRealtimeAsrEnabled);
         setIsWebSpeechApiEnabled(newIsWebSpeechApiEnabled);
         setIsTwoStepJpCn(newIsTwoStepJpCn);
         setIsOfflineTtsEnabled(newIsTtsEnabled);
@@ -1493,6 +1609,7 @@ const App: React.FC = () => {
         localStorage.setItem('asr-model-id', newAsrModelId);
         localStorage.setItem('offline-mode-enabled', JSON.stringify(isOfflineEnabled));
         localStorage.setItem('is-offline-asr-enabled', JSON.stringify(newIsOfflineAsrEnabled));
+        localStorage.setItem('is-realtime-asr-enabled', JSON.stringify(newIsRealtimeAsrEnabled));
         localStorage.setItem('is-web-speech-api-enabled', JSON.stringify(newIsWebSpeechApiEnabled));
         localStorage.setItem('is-two-step-jp-cn-enabled', JSON.stringify(newIsTwoStepJpCn));
         localStorage.setItem('tts-enabled', JSON.stringify(newIsTtsEnabled));
@@ -1671,6 +1788,7 @@ const App: React.FC = () => {
                 currentOfflineMaxNumImages={offlineMaxNumImages}
                 // ASR Props
                 currentIsOfflineAsrEnabled={isOfflineAsrEnabled}
+                currentIsRealtimeAsrEnabled={isRealtimeAsrEnabled}
                 currentIsWebSpeechApiEnabled={isWebSpeechApiEnabled}
                 currentAsrModelId={asrModelId}
                 currentIsNoiseCancellationEnabled={isNoiseCancellationEnabled}

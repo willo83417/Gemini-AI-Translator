@@ -17,6 +17,7 @@ interface SettingsModalProps {
         asrModelId: string,
         isOfflineEnabled: boolean,
         isOfflineAsrEnabled: boolean,
+        isRealtimeAsrEnabled: boolean,
         isWebSpeechApiEnabled: boolean,
         onlineProvider: string,
         openaiApiUrl: string,
@@ -64,6 +65,7 @@ interface SettingsModalProps {
     currentOfflineMaxNumImages: number;
     // ASR Props
     currentIsOfflineAsrEnabled: boolean;
+    currentIsRealtimeAsrEnabled: boolean;
     currentIsWebSpeechApiEnabled: boolean;
     currentAsrModelId: string;
     currentIsNoiseCancellationEnabled: boolean;
@@ -112,6 +114,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     currentOfflineSupportAudio,
     currentOfflineMaxNumImages,
     currentIsOfflineAsrEnabled,
+    currentIsRealtimeAsrEnabled,
     currentIsWebSpeechApiEnabled,
     currentAsrModelId,
     currentIsNoiseCancellationEnabled,
@@ -143,6 +146,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     // ASR Settings
     const [isOfflineAsrEnabled, setIsOfflineAsrEnabled] = useState(currentIsOfflineAsrEnabled);
+    const [isRealtimeAsrEnabled, setIsRealtimeAsrEnabled] = useState(currentIsRealtimeAsrEnabled);
     const [isWebSpeechApiEnabled, setIsWebSpeechApiEnabled] = useState(currentIsWebSpeechApiEnabled);
     const [asrModelId, setAsrModelId] = useState(currentAsrModelId);
     const [isNoiseCancellationEnabled, setIsNoiseCancellationEnabled] = useState(currentIsNoiseCancellationEnabled);
@@ -195,6 +199,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
             // ASR
             setIsOfflineAsrEnabled(currentIsOfflineAsrEnabled);
+            setIsRealtimeAsrEnabled(currentIsRealtimeAsrEnabled);
             setIsWebSpeechApiEnabled(currentIsWebSpeechApiEnabled);
             setAsrModelId(currentAsrModelId);
             setIsNoiseCancellationEnabled(currentIsNoiseCancellationEnabled);
@@ -210,7 +215,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         currentIsTwoStepJpCnEnabled, currentIsOfflineTtsEnabled, currentOfflineTtsVoiceURI, 
         currentOfflineTtsRate, currentOfflineTtsPitch, currentOfflineMaxTokens, currentOfflineTopK, 
         currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, 
-        currentOfflineMaxNumImages, currentIsOfflineAsrEnabled, currentIsWebSpeechApiEnabled,
+        currentOfflineMaxNumImages, currentIsOfflineAsrEnabled, currentIsRealtimeAsrEnabled, currentIsWebSpeechApiEnabled,
         currentAsrModelId, currentIsNoiseCancellationEnabled, currentAudioGainValue, currentSelectedOcrModel,
         currentIsOcrAutoInitEnabled
     ]);
@@ -229,7 +234,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     
     const handleSave = () => {
         onSave(
-            apiKey, modelName, huggingFaceApiKey, offlineModelName, asrModelId, isOfflineEnabled, isOfflineAsrEnabled, isWebSpeechApiEnabled, onlineProvider, openaiApiUrl,
+            apiKey, modelName, huggingFaceApiKey, offlineModelName, asrModelId, isOfflineEnabled, isOfflineAsrEnabled, isRealtimeAsrEnabled, isWebSpeechApiEnabled, onlineProvider, openaiApiUrl,
             isOfflineTtsEnabled, offlineTtsVoiceURI, offlineTtsRate, offlineTtsPitch, isTwoStepJpCnEnabled,
             offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages,
             isNoiseCancellationEnabled, audioGainValue, selectedOcrModel, isOcrAutoInitEnabled
@@ -261,6 +266,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         
         // Clear ASR
         setIsOfflineAsrEnabled(false);
+        setIsRealtimeAsrEnabled(false);
         setIsWebSpeechApiEnabled(true);
         setAsrModelId(ASR_MODELS[0].id);
         setIsNoiseCancellationEnabled(false);
@@ -268,7 +274,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onClearAsrCache();
 
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
-        onSave('', 'gemini-3-flash-preview', '', '', ASR_MODELS[0].id, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, 0, false, 0, 'ch_v5', false);
+        onSave('', 'gemini-3-flash-preview', '', '', ASR_MODELS[0].id, false, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, 0, false, 0, 'ch_v5', false);
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -612,6 +618,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 }}
                                 title={t('settings.enableOfflineAsrLabel')}
                                 description={t('settings.enableOfflineAsrDescription')}
+                             />
+                             <ToggleSwitch
+                                id="realtime-asr-toggle"
+                                isEnabled={isRealtimeAsrEnabled}
+                                setIsEnabled={setIsRealtimeAsrEnabled}
+                                title={t('settings.enableRealtimeAsrLabel', '即時處理(realtime)')}
+                                description={t('settings.enableRealtimeAsrDescription', '即時辨識並轉換成文字')}
+                                disabled={!isOfflineAsrEnabled}
                              />
                             <div className={`space-y-3 transition-opacity ${!isOfflineAsrEnabled ? 'opacity-50' : ''}`}>
                                 <label className={`block text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>{t('settings.asrModelLabel')}</label>

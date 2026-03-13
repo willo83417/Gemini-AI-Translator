@@ -94,7 +94,7 @@ const TranslationInput: React.FC<TranslationInputProps> = ({
             </div>
             <div className="flex justify-between items-center mt-2">
                  <p className="text-sm text-gray-400 w-20">
-                    {isRecording && isOfflineModeEnabled && recordingCountdown !== null ? (
+                    {isRecording && recordingCountdown !== null ? (
                         <span className="text-red-500 font-semibold text-base tabular-nums">
                             {t('translationInput.countdownPrefix')}{String(recordingCountdown).padStart(2, '0')}
                         </span>

@@ -23,6 +23,7 @@ interface TranslationOutputProps {
     onlineProvider: string;
     isOfflineTtsEnabled: boolean;
     isAstRecording: boolean;
+    isUserSpeaking?: boolean;
     onToggleAstRecording: () => void;
     recordingCountdown: number | null;
 }
@@ -45,6 +46,7 @@ const TranslationOutput: React.FC<TranslationOutputProps> = ({
     onlineProvider,
     isOfflineTtsEnabled,
     isAstRecording,
+    isUserSpeaking,
     onToggleAstRecording,
     recordingCountdown,
 }) => {
@@ -153,7 +155,7 @@ const TranslationOutput: React.FC<TranslationOutputProps> = ({
                     disabled={isLoading}
                     className={`text-white rounded-lg p-3 flex items-center justify-center transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed ${
                         isAstRecording
-                        ? 'bg-red-500 animate-pulse'
+                        ? (isUserSpeaking ? 'bg-red-600 animate-pulse' : 'bg-red-500')
                         : 'bg-indigo-500 hover:bg-indigo-600'
                     }`}
                     aria-label={isAstRecording ? t('translationOutput.astStop') : t('translationOutput.astStart')}
