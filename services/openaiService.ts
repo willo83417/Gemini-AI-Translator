@@ -22,7 +22,7 @@ export const translateTextStream = async (
     const systemPrompt = `${sourceLanguageInstruction} Then, translate the text to ${targetLang}. Do not add any extra explanations, comments, or annotations. Return only the translated text.`;
 
     try {
-        const response = await fetch(`${apiUrl}/v1/chat/completions`, {
+        const response = await fetch(`${apiUrl}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -31,10 +31,22 @@ export const translateTextStream = async (
             body: JSON.stringify({
                 model: modelName,
                 messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: text },
+                   /* { role: 'system', content: systemPrompt },
+                    { role: 'user', content: text },*/
+					{ 
+						role: 'user', 
+						content: [
+						{
+							"type": "text",
+							"text": systemPrompt
+						},
+						{
+							"type": "text",
+							"text": text
+						}] 
+					},
                 ],
-                temperature: 1.0,
+                temperature: 0.3,
                 stream: true, // Enable streaming
             }),
             signal, // Pass the AbortSignal to the fetch request
