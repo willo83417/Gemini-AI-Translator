@@ -254,6 +254,7 @@ const App: React.FC = () => {
     const [offlineTemperature, setOfflineTemperature] = useState(0.3);
     const [offlineRandomSeed, setOfflineRandomSeed] = useState(10);
     const [offlineSupportAudio, setOfflineSupportAudio] = useState(false);
+    const [offlineAudioRealtime, setOfflineAudioRealtime] = useState(false);
     const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(0);
 
     // ASR State
@@ -312,6 +313,7 @@ const App: React.FC = () => {
     const mediaStreamRef = useRef<MediaStream | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const lastProcessedSampleIndexRef = useRef<number>(0);
     
     // Countdown timer
     const countdownTimerRef = useRef<number | null>(null);
@@ -581,22 +583,40 @@ const App: React.FC = () => {
                     setInputText('');
                     setIsLoading(false);
                     break;
+                case 'transcribe_start':
+                    // Do not clear text here, as we are appending chunks
+                    break;
+                case 'transcribe_chunk':
+                    setInputText(prev => {
+                        if (prev === t('notifications.transcribing')) {
+                            return payload.chunk;
+                        }
+                        return prev + payload.chunk;
+                    });
+                    break;
                 case 'transcribe_done':
-                    setIsTranscribing(false);
+                    isAsrProcessingRef.current = false;
                     const transcribedText = payload.text?.trim() || '';
                     setIsLoading(false);
-                    if (transcribedText) {
-                        setInputText(transcribedText);
-                        if (isAwaitingAstTranslation) {
-                            setIsAwaitingAstTranslation(false);
-                            performReverseTranslate(transcribedText);
-                        }
+                    
+                    if (payload.isChunk) {
+                        setInputText(prev => prev + (prev.endsWith(' ') ? '' : ' '));
                     } else {
-                        setInputText(t('notifications.transcriptionFailedEmpty'));
-                        setIsAwaitingAstTranslation(false);
+                        setIsTranscribing(false);
+                        if (transcribedText) {
+                            setInputText(transcribedText);
+                            if (isAwaitingAstTranslation) {
+                                setIsAwaitingAstTranslation(false);
+                                performReverseTranslate(transcribedText);
+                            }
+                        } else {
+                            setInputText(t('notifications.transcriptionFailedEmpty'));
+                            setIsAwaitingAstTranslation(false);
+                        }
                     }
                     break;
                 case 'transcribe_error':
+                    isAsrProcessingRef.current = false;
                     setIsTranscribing(false);
                     const errorMessage = payload.error || 'Unknown transcription error.';
                     showNotification(t('notifications.transcriptionFailed', { errorMessage }), 'error');
@@ -817,6 +837,9 @@ const App: React.FC = () => {
         const savedAudio = localStorage.getItem('offline-support-audio');
         if (savedAudio) setOfflineSupportAudio(JSON.parse(savedAudio));
 
+        const savedAudioRealtime = localStorage.getItem('offline-audio-realtime');
+        if (savedAudioRealtime) setOfflineAudioRealtime(JSON.parse(savedAudioRealtime));
+
         const savedImages = localStorage.getItem('offline-max-num-images');
         if (savedImages) setOfflineMaxNumImages(JSON.parse(savedImages));
 
@@ -934,7 +957,7 @@ const App: React.FC = () => {
                 if (!modelBlob) throw new Error(`Model blob for ${modelToLoad} not found.`);
                 const options = {
                     maxTokens: offlineMaxTokens, topK: offlineTopK, temperature: offlineTemperature,
-                    randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, maxNumImages: offlineMaxNumImages,
+                    randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, audioRealtime: offlineAudioRealtime, maxNumImages: offlineMaxNumImages,
                 };
                 getOrCreateWorker().postMessage({ type: 'init', payload: { modelBlob, modelSource: modelToLoad, options } });
             }).catch(err => {
@@ -956,7 +979,7 @@ const App: React.FC = () => {
     }, [
         loadingQueue, isOfflineModelInitializing, isAsrInitializing, ocrEngineStatus,
         offlineModelName, asrModelId, selectedOcrModel,
-        offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages,
+        offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineAudioRealtime, offlineMaxNumImages,
         getOrCreateWorker, initializeOcr, showNotification, t
     ]);
 
@@ -1063,12 +1086,14 @@ const App: React.FC = () => {
         }
     };
 
-    const handleStartRecording = (onStop: (audioBlob: Blob) => void, onDataAvailable?: (audioBlob: Blob) => void) => {
+    const handleStartRecording = (onStop: (audioBlob: Blob) => void, onDataAvailable?: (audioBlob: Blob) => void, onChunkAvailable?: (audioBlob: Blob) => void) => {
         if (isRecording || isAstRecording) return;
 
         navigator.mediaDevices.getUserMedia({ audio: true })
             .then(stream => {
                 audioChunksRef.current = [];
+                lastProcessedSampleIndexRef.current = 0;
+                let chunkAccumulator: Blob[] = [];
                 onStopRecordingCallbackRef.current = onStop;
                 const recorder = new MediaRecorder(stream);
                 mediaRecorderRef.current = recorder;
@@ -1076,10 +1101,17 @@ const App: React.FC = () => {
                 recorder.ondataavailable = event => {
                     if (event.data.size > 0) {
                         audioChunksRef.current.push(event.data);
+                        chunkAccumulator.push(event.data);
                         if (onDataAvailable) {
                             const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
                             const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
                             onDataAvailable(audioBlob);
+                        }
+                        if (onChunkAvailable && chunkAccumulator.length >= 3) {
+                            const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+                            const chunkBlob = new Blob(audioChunksRef.current, { type: mimeType });
+                            onChunkAvailable(chunkBlob);
+                            chunkAccumulator = [];
                         }
                     }
                 };
@@ -1103,7 +1135,7 @@ const App: React.FC = () => {
                     setIsAstRecording(false);
                 };
 
-                if (onDataAvailable) {
+                if (onDataAvailable || onChunkAvailable) {
                     recorder.start(1000); // 1 second chunks
                 } else {
                     recorder.start();
@@ -1291,10 +1323,44 @@ const App: React.FC = () => {
                             type: 'transcribe', 
                             payload: { 
                                 audioData: pcmWavBlob, 
-                                sourceLang: i18n.t(sourceLang.name, { lng: 'en' })
+                                sourceLang: i18n.t(sourceLang.name, { lng: 'en' }),
+                                isStream: false
                             } 
                         });
-                     });
+                     }, undefined, offlineAudioRealtime ? async (audioBlob) => {
+                        if (isAsrProcessingRef.current) return;
+                        try {
+                            isAsrProcessingRef.current = true;
+                            const audioData = await processAudioForTranscription(audioBlob); 
+                            
+                            const newAudioData = audioData.slice(lastProcessedSampleIndexRef.current);
+                            lastProcessedSampleIndexRef.current = audioData.length;
+
+                            if (newAudioData.length === 0) {
+                                isAsrProcessingRef.current = false;
+                                return;
+                            }
+
+                            const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+                            const audioBuffer = tempAudioContext.createBuffer(1, newAudioData.length, 16000);
+                            audioBuffer.copyToChannel(newAudioData, 0);
+                            const pcmWavBlob = audioBufferToWav(audioBuffer);
+                            await tempAudioContext.close();
+                            
+                            const worker = getOrCreateWorker();
+                            worker.postMessage({ 
+                                type: 'transcribe', 
+                                payload: { 
+                                    audioData: pcmWavBlob, 
+                                    sourceLang: i18n.t(sourceLang.name, { lng: 'en' }),
+                                    isStream: true
+                                } 
+                            });
+                        } catch (err) {
+                            console.error(err);
+                            isAsrProcessingRef.current = false;
+                        }
+                     } : undefined);
                 } else {
                      showNotification(t('notifications.offlineModelNotReadyRecording'), 'error');
                      setIsRecording(false);
@@ -1421,10 +1487,44 @@ const App: React.FC = () => {
                            type: 'transcribe', 
                            payload: { 
                                audioData: pcmWavBlob, 
-                               sourceLang: i18n.t(targetLang.name, { lng: 'en' })
+                               sourceLang: i18n.t(targetLang.name, { lng: 'en' }),
+                               isStream: false
                            } 
                        });
-                    });
+                    }, undefined, offlineAudioRealtime ? async (audioBlob) => {
+                       if (isAsrProcessingRef.current) return;
+                       try {
+                           isAsrProcessingRef.current = true;
+                           const audioData = await processAudioForTranscription(audioBlob); 
+                           
+                           const newAudioData = audioData.slice(lastProcessedSampleIndexRef.current);
+                           lastProcessedSampleIndexRef.current = audioData.length;
+
+                           if (newAudioData.length === 0) {
+                               isAsrProcessingRef.current = false;
+                               return;
+                           }
+
+                           const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+                           const audioBuffer = tempAudioContext.createBuffer(1, newAudioData.length, 16000);
+                           audioBuffer.copyToChannel(newAudioData, 0);
+                           const pcmWavBlob = audioBufferToWav(audioBuffer);
+                           await tempAudioContext.close();
+                           
+                           const worker = getOrCreateWorker();
+                           worker.postMessage({ 
+                               type: 'transcribe', 
+                               payload: { 
+                                   audioData: pcmWavBlob, 
+                                   sourceLang: i18n.t(targetLang.name, { lng: 'en' }),
+                                   isStream: true
+                               } 
+                           });
+                       } catch (err) {
+                           console.error(err);
+                           isAsrProcessingRef.current = false;
+                       }
+                    } : undefined);
                } else {
                     showNotification(t('notifications.offlineModelNotReadyRecording'), 'error');
                     setIsAstRecording(false);
@@ -1567,6 +1667,7 @@ const App: React.FC = () => {
         newOfflineTemperature: number,
         newOfflineRandomSeed: number,
         newOfflineSupportAudio: boolean,
+        newOfflineAudioRealtime: boolean,
         newOfflineMaxNumImages: number,
         newIsNoiseCancellationEnabled: boolean,
         newAudioGainValue: number,
@@ -1594,6 +1695,7 @@ const App: React.FC = () => {
         setOfflineTemperature(newOfflineTemperature);
         setOfflineRandomSeed(newOfflineRandomSeed);
         setOfflineSupportAudio(newOfflineSupportAudio);
+        setOfflineAudioRealtime(newOfflineAudioRealtime);
         setOfflineMaxNumImages(newOfflineMaxNumImages);
         setIsNoiseCancellationEnabled(newIsNoiseCancellationEnabled);
         setAudioGainValue(newAudioGainValue);
@@ -1621,6 +1723,7 @@ const App: React.FC = () => {
         localStorage.setItem('offline-temperature', JSON.stringify(newOfflineTemperature));
         localStorage.setItem('offline-random-seed', JSON.stringify(newOfflineRandomSeed));
         localStorage.setItem('offline-support-audio', JSON.stringify(newOfflineSupportAudio));
+        localStorage.setItem('offline-audio-realtime', JSON.stringify(newOfflineAudioRealtime));
         localStorage.setItem('offline-max-num-images', JSON.stringify(newOfflineMaxNumImages));
         localStorage.setItem('is-noise-cancellation-enabled', JSON.stringify(newIsNoiseCancellationEnabled));
         localStorage.setItem('audio-gain-value', JSON.stringify(newAudioGainValue));
@@ -1785,6 +1888,7 @@ const App: React.FC = () => {
                 currentOfflineTemperature={offlineTemperature}
                 currentOfflineRandomSeed={offlineRandomSeed}
                 currentOfflineSupportAudio={offlineSupportAudio}
+                currentOfflineAudioRealtime={offlineAudioRealtime}
                 currentOfflineMaxNumImages={offlineMaxNumImages}
                 // ASR Props
                 currentIsOfflineAsrEnabled={isOfflineAsrEnabled}

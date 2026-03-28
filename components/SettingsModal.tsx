@@ -31,6 +31,7 @@ interface SettingsModalProps {
         offlineTemperature: number,
         offlineRandomSeed: number,
         offlineSupportAudio: boolean,
+        offlineAudioRealtime: boolean,
         offlineMaxNumImages: number,
         isNoiseCancellationEnabled: boolean,
         audioGainValue: number,
@@ -62,6 +63,7 @@ interface SettingsModalProps {
     currentOfflineTemperature: number;
     currentOfflineRandomSeed: number;
     currentOfflineSupportAudio: boolean;
+    currentOfflineAudioRealtime: boolean;
     currentOfflineMaxNumImages: number;
     // ASR Props
     currentIsOfflineAsrEnabled: boolean;
@@ -112,6 +114,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     currentOfflineTemperature,
     currentOfflineRandomSeed,
     currentOfflineSupportAudio,
+    currentOfflineAudioRealtime,
     currentOfflineMaxNumImages,
     currentIsOfflineAsrEnabled,
     currentIsRealtimeAsrEnabled,
@@ -165,6 +168,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [offlineTemperature, setOfflineTemperature] = useState(currentOfflineTemperature);
     const [offlineRandomSeed, setOfflineRandomSeed] = useState(currentOfflineRandomSeed);
     const [offlineSupportAudio, setOfflineSupportAudio] = useState(currentOfflineSupportAudio);
+    const [offlineAudioRealtime, setOfflineAudioRealtime] = useState(currentOfflineAudioRealtime);
     const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(currentOfflineMaxNumImages);
     
     // OCR State
@@ -195,6 +199,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             setOfflineTemperature(currentOfflineTemperature);
             setOfflineRandomSeed(currentOfflineRandomSeed);
             setOfflineSupportAudio(currentOfflineSupportAudio);
+            setOfflineAudioRealtime(currentOfflineAudioRealtime);
             setOfflineMaxNumImages(currentOfflineMaxNumImages);
 
             // ASR
@@ -214,7 +219,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         currentHuggingFaceApiKey, currentOfflineModelName, currentIsOfflineModeEnabled, 
         currentIsTwoStepJpCnEnabled, currentIsOfflineTtsEnabled, currentOfflineTtsVoiceURI, 
         currentOfflineTtsRate, currentOfflineTtsPitch, currentOfflineMaxTokens, currentOfflineTopK, 
-        currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, 
+        currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, currentOfflineAudioRealtime,
         currentOfflineMaxNumImages, currentIsOfflineAsrEnabled, currentIsRealtimeAsrEnabled, currentIsWebSpeechApiEnabled,
         currentAsrModelId, currentIsNoiseCancellationEnabled, currentAudioGainValue, currentSelectedOcrModel,
         currentIsOcrAutoInitEnabled
@@ -236,7 +241,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onSave(
             apiKey, modelName, huggingFaceApiKey, offlineModelName, asrModelId, isOfflineEnabled, isOfflineAsrEnabled, isRealtimeAsrEnabled, isWebSpeechApiEnabled, onlineProvider, openaiApiUrl,
             isOfflineTtsEnabled, offlineTtsVoiceURI, offlineTtsRate, offlineTtsPitch, isTwoStepJpCnEnabled,
-            offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineMaxNumImages,
+            offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineAudioRealtime, offlineMaxNumImages,
             isNoiseCancellationEnabled, audioGainValue, selectedOcrModel, isOcrAutoInitEnabled
         );
         onClose();
@@ -260,6 +265,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setOfflineTemperature(0.3);
         setOfflineRandomSeed(10);
         setOfflineSupportAudio(false);
+        setOfflineAudioRealtime(false);
         setOfflineMaxNumImages(0);
         setSelectedOcrModel('ch_v5');
         setIsOcrAutoInitEnabled(false);
@@ -274,7 +280,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onClearAsrCache();
 
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
-        onSave('', 'gemini-3-flash-preview', '', '', ASR_MODELS[0].id, false, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, 0, false, 0, 'ch_v5', false);
+        onSave('', 'gemini-3-flash-preview', '', '', ASR_MODELS[0].id, false, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, false, 0, false, 0, 'ch_v5', false);
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -589,6 +595,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         title={t('settings.enableGemmaAudioLabel')} 
                                         description={t('settings.enableGemmaAudioDescription')} 
                                         disabled={!isOfflineEnabled}
+                                    />
+                                    <ToggleSwitch 
+                                        id="support-audio-realtime-toggle" 
+                                        isEnabled={offlineAudioRealtime} 
+                                        setIsEnabled={setOfflineAudioRealtime} 
+                                        title={t('settings.enableGemmaAudioRealtimeLabel') || "Gemma 3N Audio Realtime"} 
+                                        description={t('settings.enableGemmaAudioRealtimeDescription') || "Process audio in real-time using Gemma 3N."} 
+                                        disabled={!offlineSupportAudio || !isOfflineEnabled}
                                     />
                                 </div>
                             )}

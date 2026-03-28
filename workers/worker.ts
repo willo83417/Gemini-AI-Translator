@@ -272,11 +272,28 @@ const handleExtractText = async (payload: any) => {
     }
 };
 
+let isTranscribing = false;
+let transcribeQueue: any[] = [];
+
+const processTranscribeQueue = async () => {
+    if (isTranscribing || transcribeQueue.length === 0) return;
+    isTranscribing = true;
+    const payload = transcribeQueue.shift();
+    await executeTranscribe(payload);
+    isTranscribing = false;
+    processTranscribeQueue();
+};
+
 const handleTranscribe = async (payload: any) => {
+    transcribeQueue.push(payload);
+    processTranscribeQueue();
+};
+
+const executeTranscribe = async (payload: any) => {
     if (!llmInference) {
         return self.postMessage({ type: 'transcribe_error', payload: { error: 'Offline model not initialized.' } });
     }
-    const { audioData, sourceLang } = payload; 
+    const { audioData, sourceLang, isStream } = payload; 
     
     let audioUrl: string | null = null;
     try {
@@ -287,21 +304,48 @@ const handleTranscribe = async (payload: any) => {
 
         const prompt = `Transcribe the following audio. ${languageClause}  Return only the transcribed text.`;
         
-        const response = await llmInference.generateResponse([
-            `<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, 
-            { audioSource: audioUrl }
-        ]);
-        
-        if (!response || response.trim() === "") {
-             console.warn("Model returned an empty response for transcription.");
-        }
+        if (isStream) {
+            let fullText = "";
+            self.postMessage({ type: 'transcribe_start' });
+            await new Promise<void>((resolve, reject) => {
+                try {
+                    llmInference.generateResponse([
+                        `<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, 
+                        { audioSource: audioUrl }
+                    ], (partialResult: string, done: boolean) => {
+                        fullText += partialResult;
+                        self.postMessage({ type: 'transcribe_chunk', payload: { chunk: partialResult } });
+                        if (done) {
+                            self.postMessage({ type: 'transcribe_done', payload: { text: fullText.trim(), isChunk: true } });
+                            if (audioUrl) {
+                                URL.revokeObjectURL(audioUrl);
+                            }
+                            resolve();
+                        }
+                    });
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        } else {
+            const response = await llmInference.generateResponse([
+                `<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, 
+                { audioSource: audioUrl }
+            ]);
+            
+            if (!response || response.trim() === "") {
+                 console.warn("Model returned an empty response for transcription.");
+            }
 
-        self.postMessage({ type: 'transcribe_done', payload: { text: response.trim() } });
+            self.postMessage({ type: 'transcribe_done', payload: { text: response.trim(), isChunk: false } });
+            if (audioUrl) {
+                URL.revokeObjectURL(audioUrl);
+            }
+        }
     } catch (error) {
         console.error('Transcription Internal Error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Offline audio transcription failed.';
         self.postMessage({ type: 'transcribe_error', payload: { error: errorMessage } });
-    } finally {
         if (audioUrl) {
             URL.revokeObjectURL(audioUrl);
         }
@@ -330,6 +374,7 @@ self.onmessage = async (event: MessageEvent) => {
             }
             case 'cancel_task':
                 currentTaskAbortController?.abort();
+                transcribeQueue = [];
                 break;
             case 'extractText':
                 await handleExtractText(payload);
