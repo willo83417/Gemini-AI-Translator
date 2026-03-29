@@ -96,6 +96,16 @@ const audioBufferToWav = (buffer: AudioBuffer): Blob => {
     return new Blob([view], { type: 'audio/wav' });
 };
 
+const processAudioToWav = async (audioBlob: Blob, noiseSuppression: boolean, gain: number): Promise<Blob> => {
+    const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression, gain });
+    const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+    const audioBuffer = tempAudioContext.createBuffer(1, audioData.length, 16000);
+    audioBuffer.copyToChannel(audioData, 0);
+    const pcmWavBlob = audioBufferToWav(audioBuffer);
+    await tempAudioContext.close();
+    return pcmWavBlob;
+};
+
 // --- OCR Processing Logic ---
 type ProcessedItem = EsearchOCRItem & {
     minX: number;
@@ -266,7 +276,7 @@ const App: React.FC = () => {
     const [isAsrInitialized, setIsAsrInitialized] = useState(false);
     const [asrModelsCacheStatus, setAsrModelsCacheStatus] = useState<Record<string, boolean>>({});
     const [asrLoadingProgress, setAsrLoadingProgress] = useState({ file: '', progress: 0 });
-    const [isNoiseCancellationEnabled, setIsNoiseCancellationEnabled] = useState(false);
+    const [isNoiseCancellationEnabled, setIsNoiseCancellationEnabled] = useState(true);
     const [audioGainValue, setAudioGainValue] = useState(1.0);
 
     // Offline recording countdown state
@@ -1311,7 +1321,7 @@ const App: React.FC = () => {
                      setInputText(t('notifications.transcribing'));
                      setIsTranscribing(true);
                      handleStartRecording(async (audioBlob) => {
-                        const audioData = await processAudioForTranscription(audioBlob); 
+                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue }); 
                         const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
                         const audioBuffer = tempAudioContext.createBuffer(1, audioData.length, 16000);
                         audioBuffer.copyToChannel(audioData, 0);
@@ -1331,7 +1341,7 @@ const App: React.FC = () => {
                         if (isAsrProcessingRef.current) return;
                         try {
                             isAsrProcessingRef.current = true;
-                            const audioData = await processAudioForTranscription(audioBlob); 
+                            const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue }); 
                             
                             const newAudioData = audioData.slice(lastProcessedSampleIndexRef.current);
                             lastProcessedSampleIndexRef.current = audioData.length;
@@ -1372,13 +1382,14 @@ const App: React.FC = () => {
                     const controller = new AbortController();
                     audioAbortControllerRef.current = controller;
                     try {
+                        const processedBlob = await processAudioToWav(audioBlob, isNoiseCancellationEnabled, audioGainValue);
                         let transcribedText = '';
                         if (onlineProvider === 'openai') {
                             const langCode = sourceLang.code.split('-')[0];
-                            transcribedText = await transcribeAudioOpenAI(audioBlob, langCode, apiKey, openaiApiUrl, controller.signal);
+                            transcribedText = await transcribeAudioOpenAI(processedBlob, langCode, apiKey, openaiApiUrl, controller.signal);
                         } else {
                             const langName = t(sourceLang.name, { lng: 'en' });
-                            transcribedText = await transcribeAudioGemini(audioBlob, langName, apiKey, modelName, controller.signal);
+                            transcribedText = await transcribeAudioGemini(processedBlob, langName, apiKey, modelName, controller.signal);
                         }
                         setInputText(transcribedText);
                     } catch (err) {
@@ -1475,7 +1486,7 @@ const App: React.FC = () => {
                     setInputText(t('notifications.transcribing'));
                     setIsTranscribing(true);
                     handleStartRecording(async (audioBlob) => {
-                       const audioData = await processAudioForTranscription(audioBlob); 
+                       const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue }); 
                        const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
                        const audioBuffer = tempAudioContext.createBuffer(1, audioData.length, 16000);
                        audioBuffer.copyToChannel(audioData, 0);
@@ -1495,7 +1506,7 @@ const App: React.FC = () => {
                        if (isAsrProcessingRef.current) return;
                        try {
                            isAsrProcessingRef.current = true;
-                           const audioData = await processAudioForTranscription(audioBlob); 
+                           const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue }); 
                            
                            const newAudioData = audioData.slice(lastProcessedSampleIndexRef.current);
                            lastProcessedSampleIndexRef.current = audioData.length;
@@ -1536,13 +1547,14 @@ const App: React.FC = () => {
                     const controller = new AbortController();
                     audioAbortControllerRef.current = controller;
                     try {
+                        const processedBlob = await processAudioToWav(audioBlob, isNoiseCancellationEnabled, audioGainValue);
                         let transcribedText = '';
                         if (onlineProvider === 'openai') {
                             const langCode = targetLang.code.split('-')[0];
-                            transcribedText = await transcribeAudioOpenAI(audioBlob, langCode, apiKey, openaiApiUrl, controller.signal);
+                            transcribedText = await transcribeAudioOpenAI(processedBlob, langCode, apiKey, openaiApiUrl, controller.signal);
                         } else {
                             const langName = t(targetLang.name, { lng: 'en' });
-                            transcribedText = await transcribeAudioGemini(audioBlob, langName, apiKey, modelName, controller.signal);
+                            transcribedText = await transcribeAudioGemini(processedBlob, langName, apiKey, modelName, controller.signal);
                         }
                         setInputText(transcribedText);
                         if (transcribedText.trim()) {

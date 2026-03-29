@@ -610,6 +610,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
                     {activeTab === 'speech' && (
                          <div role="tabpanel" id="speech-settings" aria-labelledby="speech-tab" className="space-y-6">
+                             <div className="space-y-4">
+                                <label className="block text-sm font-medium -mb-2 text-gray-700">{t('settings.audioProcessingLabel')}</label>
+                                 <ToggleSwitch
+                                    id="noise-cancellation-toggle"
+                                    isEnabled={isNoiseCancellationEnabled}
+                                    setIsEnabled={setIsNoiseCancellationEnabled}
+                                    title={t('settings.enableNoiseCancellationLabel')}
+                                    description={t('settings.enableNoiseCancellationDescription')}
+                                 />
+                                 <div>
+                                    <label htmlFor="gain-slider" className="flex justify-between items-center text-sm font-medium mb-1 text-gray-700">
+                                        <span>{t('settings.audioGainLabel')}</span>
+                                        <span className="font-normal text-gray-500">{audioGainValue.toFixed(1)}x</span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        id="gain-slider"
+                                        min={0.5} max={5} step={0.1}
+                                        value={audioGainValue}
+                                        onChange={e => setAudioGainValue(parseFloat(e.target.value))}
+                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                 </div>
+                            </div>
+                            <div className="border-t border-gray-200"></div>
+
                             <ToggleSwitch
                                 id="web-speech-toggle"
                                 isEnabled={isWebSpeechApiEnabled}
@@ -698,35 +724,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <span>{t('settings.clearAsrCacheButton')}</span>
                                     </button>
                                 </div>
-                            </div>
-
-                            <div className="border-t border-gray-200"></div>
-
-                             <div className={`space-y-4 transition-opacity ${!isOfflineAsrEnabled ? 'opacity-50' : ''}`}>
-                                <label className={`block text-sm font-medium -mb-2 ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>{t('settings.audioProcessingLabel')}</label>
-                                 <ToggleSwitch
-                                    id="noise-cancellation-toggle"
-                                    isEnabled={isNoiseCancellationEnabled}
-                                    setIsEnabled={setIsNoiseCancellationEnabled}
-                                    title={t('settings.enableNoiseCancellationLabel')}
-                                    description={t('settings.enableNoiseCancellationDescription')}
-                                    disabled={!isOfflineAsrEnabled}
-                                 />
-                                 <div>
-                                    <label htmlFor="gain-slider" className={`flex justify-between items-center text-sm font-medium mb-1 ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>
-                                        <span>{t('settings.audioGainLabel')}</span>
-                                        <span className="font-normal text-gray-500">{audioGainValue.toFixed(1)}x</span>
-                                    </label>
-                                    <input
-                                        type="range"
-                                        id="gain-slider"
-                                        min={0.5} max={5} step={0.1}
-                                        value={audioGainValue}
-                                        onChange={e => setAudioGainValue(parseFloat(e.target.value))}
-                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                                        disabled={!isOfflineAsrEnabled}
-                                    />
-                                 </div>
                             </div>
                         </div>
                     )}
