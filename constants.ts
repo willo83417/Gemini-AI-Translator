@@ -49,13 +49,13 @@ export const ASR_MODELS: AsrModel[] = [
         size: '~600 MB'
     },
 	{
-        id: 'Xenova/whisper-medium',
-        name: 'Whisper medium (q4f16)',
+        id: 'willopcbeta/whisper-small-ONNX',
+        name: 'unsloth-whisper-small (q4/f16)',
         quantization: {
             encoder_model: 'q4f16',
-            decoder_model_merged: 'q4f16',
+            decoder_model_merged: 'q4',
         },
-        size: '~500 MB'
+        size: '~290 MB'
     },
 	{
         id: 'Xenova/whisper-small',

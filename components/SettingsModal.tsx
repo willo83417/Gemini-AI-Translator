@@ -83,6 +83,7 @@ interface SettingsModalProps {
     onInitializeOcr: (modelConfig: OcrModelConfig) => Promise<void>;
     currentSelectedOcrModel: keyof typeof OCR_MODELS;
     currentIsOcrAutoInitEnabled: boolean;
+    onClearSettings: () => void;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
@@ -132,6 +133,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onInitializeOcr,
     currentSelectedOcrModel,
     currentIsOcrAutoInitEnabled,
+    onClearSettings
 }) => {
     const { t, i18n } = useTranslation();
     const [activeTab, setActiveTab] = useState('online');
@@ -280,6 +282,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onClearAsrCache();
 
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
+        onClearSettings();
         onSave('', 'gemini-3-flash-preview', '', '', ASR_MODELS[0].id, false, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, false, 0, false, 0, 'ch_v5', false);
     };
 

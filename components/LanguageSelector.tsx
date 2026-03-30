@@ -1,7 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Language } from '../types';
-import { ChevronDownIcon } from './icons';
 
 interface LanguageSelectorProps {
     selectedLang: Language;
@@ -11,75 +10,78 @@ interface LanguageSelectorProps {
 
 const LanguageSelector: React.FC<LanguageSelectorProps> = ({ selectedLang, setSelectedLang, languages }) => {
     const { t } = useTranslation();
+    const [inputValue, setInputValue] = useState(t(selectedLang.name));
     const [isOpen, setIsOpen] = useState(false);
-    const [position, setPosition] = useState<'top' | 'bottom'>('bottom');
-    const dropdownRef = useRef<HTMLDivElement>(null);
-    const buttonRef = useRef<HTMLButtonElement>(null);
+    const wrapperRef = useRef<HTMLDivElement>(null);
 
-    const handleSelect = (lang: Language) => {
-        setSelectedLang(lang);
-        setIsOpen(false);
-    };
-    
     useEffect(() => {
-        if (isOpen && buttonRef.current) {
-            const buttonRect = buttonRef.current.getBoundingClientRect();
-            // max-h-60 is 15rem = 240px. Use this for calculation.
-            const dropdownHeight = 240; 
-            const spaceBelow = window.innerHeight - buttonRect.bottom;
-            
-            // If not enough space below AND there is enough space above, open upwards.
-            if (spaceBelow < dropdownHeight && buttonRect.top > dropdownHeight) {
-                setPosition('top');
-            } else {
-                setPosition('bottom');
-            }
-        }
-    }, [isOpen]);
+        setInputValue(t(selectedLang.name));
+    }, [selectedLang, t]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
+                setInputValue(t(selectedLang.name));
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, []);
+    }, [selectedLang, t]);
 
-    const positionClasses = position === 'top' ? 'bottom-full mb-2' : 'mt-2';
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setInputValue(e.target.value);
+        setIsOpen(true);
+    };
+
+    const handleFocus = () => {
+        setInputValue('');
+        setIsOpen(true);
+    };
+
+    const handleSelect = (lang: Language) => {
+        setSelectedLang(lang);
+        setInputValue(t(lang.name));
+        setIsOpen(false);
+    };
+
+    const filteredLanguages = languages.filter(lang => 
+        t(lang.name).toLowerCase().includes(inputValue.toLowerCase())
+    );
 
     return (
-        <div className="relative" ref={dropdownRef}>
-            <button
-                ref={buttonRef}
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center space-x-2 text-lg font-semibold text-gray-700 hover:text-blue-600"
-            >
-                <span>{t(selectedLang.name)}</span>
-                <ChevronDownIcon className={`h-2.5 w-2.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
+        <div className="relative flex items-center" ref={wrapperRef}>
+            <input
+                type="text"
+                value={inputValue}
+                onChange={handleChange}
+                onFocus={handleFocus}
+                className="text-lg font-semibold text-gray-700 hover:text-blue-600 bg-transparent border-none p-0 focus:ring-0 w-32 sm:w-48 cursor-pointer"
+                placeholder={t('common.searchLanguage') || 'Search...'}
+            />
             {isOpen && (
-                <div className={`absolute z-10 ${positionClasses} w-56 bg-white rounded-md shadow-lg border border-gray-100 max-h-60 overflow-y-auto`}>
-                    <ul className="py-1">
-                        {languages.map((lang) => (
-                            <li key={lang.code}>
-                                <button
-                                    onClick={() => handleSelect(lang)}
-                                    className={`w-full text-left px-4 py-2 text-sm ${
-                                        selectedLang.code === lang.code
-                                            ? 'bg-blue-50 text-blue-600'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    {t(lang.name)}
-                                </button>
+                <ul className="absolute z-50 mt-1 max-h-60 w-48 sm:w-64 overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm top-full left-0">
+                    {filteredLanguages.length > 0 ? (
+                        filteredLanguages.map((lang) => (
+                            <li
+                                key={lang.code}
+                                className={`relative cursor-pointer select-none py-2 pl-3 pr-4 hover:bg-blue-100 ${selectedLang.code === lang.code ? 'bg-blue-50 text-blue-900 font-semibold' : 'text-gray-900'}`}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSelect(lang);
+                                }}
+                            >
+                                <span className="block truncate">{t(lang.name)}</span>
                             </li>
-                        ))}
-                    </ul>
-                </div>
+                        ))
+                    ) : (
+                        <li className="relative cursor-default select-none py-2 pl-3 pr-4 text-gray-500">
+                            {t('common.noResults') || 'No languages found'}
+                        </li>
+                    )}
+                </ul>
             )}
         </div>
     );

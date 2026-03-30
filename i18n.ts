@@ -18,7 +18,6 @@ const resources = {
         german: 'German',
         korean: 'Korean',
         russian: 'Russian',
-        portuguese: 'Portuguese',
         italian: 'Italian',
       },
       translationInput: {
@@ -208,6 +207,7 @@ const resources = {
         ocrNotReady: 'OCR engine not ready. Please initialize it in Settings > PaddleOCR v5.',
       },
       common: {
+        searchLanguage: 'Search language...',
         status: {
           not_started: 'Not Started',
           downloading: 'Downloading',
@@ -223,19 +223,18 @@ const resources = {
   'zh-TW': {
     translation: {
       languages: {
-        autoDetect: '自動偵測',
-        english: '英文',
-        chineseTraditional: '繁體中文',
-        chineseTraditionalHK: '繁體中文 (香港)',
-        chineseSimplified: '簡體中文',
-        spanish: '西班牙文',
-        japanese: '日文',
-        french: '法文',
-        german: '德文',
-        korean: '韓文',
-        russian: '俄文',
-        portuguese: '葡萄牙文',
-        italian: '義大利文',
+        autoDetect: '自動偵測(Auto)',
+        english: '英文(en)',
+        chineseTraditional: '繁體中文(zh-TW)',
+        chineseTraditionalHK: '繁體-香港(zh-HK)',
+        chineseSimplified: '簡體中文(zh-CN)',
+        spanish: '西班牙文(es)',
+        japanese: '日文(ja)',
+        french: '法文(fr)',
+        german: '德文(de)',
+        korean: '韓文(ko)',
+        russian: '俄文(ru)',
+        italian: '義大利文(it)',
       },
       translationInput: {
         online: '線上',
@@ -424,6 +423,7 @@ const resources = {
         ocrNotReady: 'OCR 引擎尚未就緒。請在 設定 > PaddleOCR v5 中進行初始化。',
       },
       common: {
+        searchLanguage: '搜尋語言...',
         status: {
           not_started: '未開始',
           downloading: '下載中',

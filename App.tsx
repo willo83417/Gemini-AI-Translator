@@ -215,8 +215,22 @@ const App: React.FC = () => {
     const { t, i18n } = useTranslation();
     const [inputText, setInputText] = useState('');
     const [translatedText, setTranslatedText] = useState('');
-    const [sourceLang, setSourceLang] = useState<Language>(LANGUAGES[0]); // Default to Auto Detect
-    const [targetLang, setTargetLang] = useState<Language>(LANGUAGES[6]); // Default to Japanese
+    const [sourceLang, setSourceLang] = useState<Language>(() => {
+        const saved = localStorage.getItem('source-lang');
+        if (saved) {
+            const lang = LANGUAGES.find(l => l.code === saved);
+            if (lang) return lang;
+        }
+        return LANGUAGES[0];
+    });
+    const [targetLang, setTargetLang] = useState<Language>(() => {
+        const saved = localStorage.getItem('target-lang');
+        if (saved) {
+            const lang = LANGUAGES.find(l => l.code === saved);
+            if (lang) return lang;
+        }
+        return LANGUAGES[6];
+    });
     const [isLoading, setIsLoading] = useState(false);
     const [isTranscribing, setIsTranscribing] = useState(false);
     
@@ -896,6 +910,14 @@ const App: React.FC = () => {
         window.speechSynthesis.onvoiceschanged = loadVoices;
         loadVoices();
     }, []);
+
+    useEffect(() => {
+        localStorage.setItem('source-lang', sourceLang.code);
+    }, [sourceLang]);
+
+    useEffect(() => {
+        localStorage.setItem('target-lang', targetLang.code);
+    }, [targetLang]);
 
     // --- Loading Queue Logic ---
 
@@ -1920,6 +1942,12 @@ const App: React.FC = () => {
                 onInitializeOcr={initializeOcr}
                 currentSelectedOcrModel={selectedOcrModel}
                 currentIsOcrAutoInitEnabled={isOcrAutoInitEnabled}
+                onClearSettings={() => {
+                    setSourceLang(LANGUAGES[0]);
+                    setTargetLang(LANGUAGES[6]);
+                    localStorage.removeItem('source-lang');
+                    localStorage.removeItem('target-lang');
+                }}
             />
 
             <HistoryModal
