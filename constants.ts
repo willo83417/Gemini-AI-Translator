@@ -32,7 +32,7 @@ export const OFFLINE_MODELS = [
         url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma3-4b-it-int4-web.task'
     },
 	{ 
-        name: 'TranslateGemma-4B-IT-int8 (3.62 GB)', 
+        name: 'TranslateGemma-4B (3.62 GB)', 
         value: 'translategemma-4b-it-int8-web.task', 
         url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/translategemma-4b-it-int8-web.task'
     },

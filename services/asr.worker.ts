@@ -3,6 +3,7 @@ import { pipeline, env, TextStreamer } from '@huggingface/transformers';
 // --- Environment Configuration ---
 env.backends.onnx.executionProviders = ['webgpu', 'wasm'];
 env.useBrowserCache = true;
+env.useWasmCache = true;    //new wasm cache setting
 env.cacheDir = 'transformers-cache';
 
 // --- Worker State & Communication ---
