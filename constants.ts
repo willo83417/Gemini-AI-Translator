@@ -17,6 +17,16 @@ export const LANGUAGES: Language[] = [
 
 export const OFFLINE_MODELS = [
     { 
+        name: 'Gemma-4-E2B-it (2 GB)', 
+        value: 'gemma-4-E2B-it-web.task', 
+        url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-4-E2B-it-web.task'
+    },
+	{ 
+        name: 'Gemma-4-E4B-it (2.9 GB)', 
+        value: 'gemma-4-E4B-it-web.task', 
+        url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-4-E4B-it-web.task'
+    },
+    { 
         name: 'Gemma-3n-E2B (3.04 GB)', 
         value: 'gemma-3n-E2B-it-int4-Web.litertlm', 
         url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-3n-E2B-it-int4-Web.litertlm'

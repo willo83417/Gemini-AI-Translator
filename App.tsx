@@ -355,7 +355,7 @@ const App: React.FC = () => {
         if (workerRef.current) {
             return workerRef.current;
         }
-        console.log("Creating offline worker...");
+        //console.log("Creating offline worker...");
         const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url), { type: 'module' });
         workerRef.current = worker;
     
@@ -400,8 +400,8 @@ const App: React.FC = () => {
         setTranslatedText('');
     
         try {
-            const sourceLangEn = i18n.t(sourceLang.name, { lng: 'en' });
-            const targetLangEn = i18n.t(targetLang.name, { lng: 'en' });
+            const sourceLangEn = sourceLang.code === 'auto' ? 'Auto Detect' : sourceLang.code;
+            const targetLangEn = targetLang.code;
 
             if (isOfflineModeEnabled) {
                 if (!offlineModelName) throw new Error('Please select an offline model in settings.');
@@ -486,8 +486,8 @@ const App: React.FC = () => {
 
         try {
             // SWAPPED LANGUAGES for reverse translation
-            const sourceLangEn = i18n.t(targetLang.name, { lng: 'en' });
-            const targetLangEn = i18n.t(sourceLang.name, { lng: 'en' });
+            const sourceLangEn = targetLang.code;
+            const targetLangEn = sourceLang.code;
 
             if (isOfflineModeEnabled) {
                 if (!offlineModelName) throw new Error('Please select an offline model in settings.');
@@ -979,7 +979,7 @@ const App: React.FC = () => {
         // Dequeue the task
         setLoadingQueue(q => q.slice(1));
 
-        console.log(`[Orchestrator] Starting next task: ${nextTask}`);
+        //console.log(`[Orchestrator] Starting next task: ${nextTask}`);
 
         if (nextTask === 'llm') {
             const modelToLoad = offlineModelName;
@@ -1355,7 +1355,7 @@ const App: React.FC = () => {
                             type: 'transcribe', 
                             payload: { 
                                 audioData: pcmWavBlob, 
-                                sourceLang: i18n.t(sourceLang.name, { lng: 'en' }),
+                                sourceLang: sourceLang.code === 'auto' ? 'Auto Detect' : sourceLang.code,
                                 isStream: false
                             } 
                         });
@@ -1384,7 +1384,7 @@ const App: React.FC = () => {
                                 type: 'transcribe', 
                                 payload: { 
                                     audioData: pcmWavBlob, 
-                                    sourceLang: i18n.t(sourceLang.name, { lng: 'en' }),
+                                    sourceLang: sourceLang.code === 'auto' ? 'Auto Detect' : sourceLang.code,
                                     isStream: true
                                 } 
                             });
@@ -1410,7 +1410,7 @@ const App: React.FC = () => {
                             const langCode = sourceLang.code.split('-')[0];
                             transcribedText = await transcribeAudioOpenAI(processedBlob, langCode, apiKey, openaiApiUrl, controller.signal);
                         } else {
-                            const langName = t(sourceLang.name, { lng: 'en' });
+                            const langName = sourceLang.code === 'auto' ? 'Auto Detect' : sourceLang.code;
                             transcribedText = await transcribeAudioGemini(processedBlob, langName, apiKey, modelName, controller.signal);
                         }
                         setInputText(transcribedText);
@@ -1520,7 +1520,7 @@ const App: React.FC = () => {
                            type: 'transcribe', 
                            payload: { 
                                audioData: pcmWavBlob, 
-                               sourceLang: i18n.t(targetLang.name, { lng: 'en' }),
+                               sourceLang: targetLang.code,
                                isStream: false
                            } 
                        });
@@ -1549,7 +1549,7 @@ const App: React.FC = () => {
                                type: 'transcribe', 
                                payload: { 
                                    audioData: pcmWavBlob, 
-                                   sourceLang: i18n.t(targetLang.name, { lng: 'en' }),
+                                   sourceLang: targetLang.code,
                                    isStream: true
                                } 
                            });
@@ -1575,7 +1575,7 @@ const App: React.FC = () => {
                             const langCode = targetLang.code.split('-')[0];
                             transcribedText = await transcribeAudioOpenAI(processedBlob, langCode, apiKey, openaiApiUrl, controller.signal);
                         } else {
-                            const langName = t(targetLang.name, { lng: 'en' });
+                            const langName = targetLang.code;
                             transcribedText = await transcribeAudioGemini(processedBlob, langName, apiKey, modelName, controller.signal);
                         }
                         setInputText(transcribedText);
@@ -1648,7 +1648,7 @@ const App: React.FC = () => {
                 if (!isOnline) throw new Error(t('notifications.offlineImageTranslateError'));
                 
                 let result: { sourceText: string, translatedText: string };
-                const targetLangEn = i18n.t(targetLang.name, { lng: 'en' });
+                const targetLangEn = targetLang.code;
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set.");
