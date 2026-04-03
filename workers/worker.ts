@@ -5,7 +5,7 @@
 	 * This spoofs the environment for MediaPipe's internal checks before the script is loaded.
 	 */
 	(self as any).exports = {};
-	//importScripts("/public/genai_bundle.js");//Development and Testing
+	//importScripts("/genai_bundle.js");//Development and Testing
 	//importScripts(`${import.meta.env.BASE_URL}genai_bundle.js`); //yarn build is used for packaging.; yarn build 打包用(Backup-2)
 	//const { FilesetResolver, LlmInference } = self.exports;
 	import { FilesetResolver, LlmInference } from '@mediapipe/tasks-genai'; //yarn build is used for packaging.; yarn build 打包用?
@@ -134,9 +134,11 @@
 	const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.27/wasm";
 	let llmInference: LlmInference | null = null;
 	let currentTaskAbortController: AbortController | null = null;
+	let currentModelSource: string | null = null;
 
 const handleInit = async (payload: any) => {
     const { modelBlob, modelSource, options } = payload;
+    currentModelSource = modelSource;
     
     if (llmInference) {
         await llmInference.close();
@@ -156,7 +158,7 @@ const handleInit = async (payload: any) => {
         const filesetResolver = await FilesetResolver.forGenAiTasks(MEDIAPIPE_WASM);
 
         const { 
-            maxTokens = 2048, topK = 40, temperature = 0.3, randomSeed = 10, supportAudio = false, maxNumImages = 0
+            maxTokens = 2048, topK = 40, temperature = 0.3, randomSeed = 5, supportAudio = false, maxNumImages = 0
         } = options;
         
         llmInference = await LlmInference.createFromOptions(filesetResolver, {
@@ -205,6 +207,7 @@ const performTranslation = (text: string, sourceLang: string, targetLang: string
                 if (signal.aborted) return;
 
                 // --- Performance Logging: Prefill ---
+                //--- build 時要註解確保發布結果是乾淨 ---
                 if (prefillTime === null && partialResult) { // First chunk has arrived
                     const firstChunkTime = performance.now();
                     prefillTime = firstChunkTime - startTime;
@@ -220,6 +223,7 @@ const performTranslation = (text: string, sourceLang: string, targetLang: string
 
                 if (done) {
                     // --- Performance Logging: Decoding ---
+                    //--- build 時要註解確保發布結果是乾淨 ---
                     const endTime = performance.now();
                     if (decodeStartTime) {
                         const decodingTime = endTime - decodeStartTime;
@@ -239,7 +243,16 @@ const performTranslation = (text: string, sourceLang: string, targetLang: string
             const sourceInstruction = sourceLang === 'Auto Detect' 
                 ? 'auto-detect the source language'
                 : `from ${sourceLang}`;
-            const prompt = `Translate the following ${sourceInstruction} text into concise ${targetLang}: "${text}". \n Provide *only* the translated text. Do not include any additional explanations, commentary, or greetings.`;
+            const promptText = `Translate the following ${sourceInstruction} text into concise ${targetLang}: "${text}". \n Provide *only* the translated text. Do not include any additional explanations, commentary, or greetings.`;
+
+            const isGemma4 = currentModelSource?.toLowerCase().includes('gemma-4') || currentModelSource?.toLowerCase().includes('gemma4');
+            
+            let prompt;
+            if (isGemma4) {
+                prompt = `<|turn>user\n${promptText}<turn|>\n<|turn>model\n`;
+            } else {
+                prompt = `<start_of_turn>user\n${promptText}<end_of_turn>\n<start_of_turn>model\n`;
+            }
 
             llmInference.generateResponse(prompt, streamCallback);
         } catch (error) {

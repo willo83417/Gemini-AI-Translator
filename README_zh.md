@@ -89,18 +89,28 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uA68LGio1CJePNXz2emCco
 
 ## 文件架構🏗️
 
-- `/` (根目錄): 包含專案的入口點和主要設定檔，如 `index.html`, `index.tsx`, `package.json`, `vite.config.ts`。
+- `/` (根目錄): 包含專案的入口點和主要設定檔，如 `index.html`, `index.tsx`, `package.json`, `vite.config.ts`, `App.tsx`, `constants.ts`, `types.ts`, `i18n.ts`。
 - `/components`: 存放所有 React UI 元件。每個元件負責一部分 UI 的渲染和互動。
   - `TranslationInput.tsx`: 來源語言輸入介面。
   - `TranslationOutput.tsx`: 目標語言輸出介面。
   - `SettingsModal.tsx`: 設定彈出視窗。
   - `HistoryModal.tsx`: 歷史紀錄彈出視窗。
   - `CameraView.tsx`: 相機翻譯介面。
+  - `LanguageSelector.tsx`: 自訂語言選擇下拉選單。
 - `/services`: 存放應用程式的核心業務邏輯，特別是與 API 和後端服務的互動。
   - `geminiService.ts`: 處理與 Google Gemini API 的所有通訊。
   - `openaiService.ts`: 處理與 OpenAI API 的所有通訊。
-  - `offlineService.ts`: 管理本地 MediaPipe 模型的載入和執行。
+  - `asrService.ts`: 管理音訊處理與語音辨識服務。
   - `downloadManager.ts`: 負責離線模型的下載、暫停、續傳和刪除。
+- `/workers`: 包含 Web Workers，用於背景處理以保持 UI 響應。
+  - `worker.ts`: 離線 LLM (Gemma) 的主要推論 Worker。
+  - `offline.worker.ts`: 離線模型管理的背景 Worker。
+  - `asr.worker.ts`: 音訊處理與 ASR 的 Worker。
+- `/hooks`: 用於特定邏輯的自訂 React Hook。
+  - `usePaddleOcr.ts`: 使用 PaddleOCR 進行本地 OCR 的 Hook。
+  - `useWebSpeech.ts`: Web Speech API 整合的 Hook。
+- `/utils`: 工具函式與共享輔助工具。
+  - `db.ts`: 用於本地儲存的 IndexedDB 管理。
 - `/types.ts`: 定義整個應用程式中使用的 TypeScript 型別。
 - `/constants.ts`: 存放應用程式的常數，如支援的語言列表、離線模型資訊等。
 - `/i18n.ts`: i18next 國際化設定檔，管理多語言介面。

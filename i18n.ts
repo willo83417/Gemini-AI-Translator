@@ -660,7 +660,7 @@ i18n
   .init({
     resources,
     fallbackLng: 'en',
-    debug: true,
+    debug: false,	//Disable debug messages
     interpolation: {
       escapeValue: false, // React already does escaping
     },

@@ -73,18 +73,28 @@ Automatically saves the last 50 translation records for users to view and reuse 
 
 ## Document Structure🏗
 
-- `/` (root directory): Contains the entry point and main configuration files for the project, such as `index.html`, `index.tsx`, `package.json`, `vite.config.ts`.
+- `/` (root directory): Contains the entry point and main configuration files for the project, such as `index.html`, `index.tsx`, `package.json`, `vite.config.ts`, `App.tsx`, `constants.ts`, `types.ts`, `i18n.ts`.
 - `/components`: Stores all React UI components. Each component is responsible for rendering and interacting with a portion of the UI.
   - `TranslationInput.tsx`: Source language input interface.
   - `TranslationOutput.tsx`: Target language output interface.
   - `SettingsModal.tsx`: Settings pop-up window.
   - `HistoryModal.tsx`: History record pop-up window.
   - `CameraView.tsx`: Camera translation interface.
+  - `LanguageSelector.tsx`: Custom language selection dropdown.
 - `/services`: Stores the application's core business logic, particularly for interacting with APIs and backend services.
   - `geminiService.ts`: Handles all communication with the Google Gemini API.
   - `openaiService.ts`: Handles all communication with the OpenAI API.
-  - `offlineService.ts`: Manages the loading and execution of local MediaPipe models.
+  - `asrService.ts`: Manages audio processing and transcription services.
   - `downloadManager.ts`: Responsible for downloading, pausing, resuming, and deleting offline models.
+- `/workers`: Contains Web Workers for background processing to keep the UI responsive.
+  - `worker.ts`: Main inference worker for offline LLM (Gemma).
+  - `offline.worker.ts`: Background worker for offline model management.
+  - `asr.worker.ts`: Worker for audio processing and ASR.
+- `/hooks`: Custom React hooks for specialized logic.
+  - `usePaddleOcr.ts`: Hook for local OCR using PaddleOCR.
+  - `useWebSpeech.ts`: Hook for Web Speech API integration.
+- `/utils`: Utility functions and shared helpers.
+  - `db.ts`: IndexedDB management for local storage.
 - `/types.ts`: Defines the TypeScript types used throughout the application.
 - `/constants.ts`: Stores application constants, such as supported language lists, offline model information, etc.
 - `/i18n.ts`: i18next internationalization configuration file, manages multilingual interfaces.
