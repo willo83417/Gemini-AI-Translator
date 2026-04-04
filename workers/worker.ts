@@ -264,24 +264,33 @@ const performTranslation = (text: string, sourceLang: string, targetLang: string
 
 const handleExtractText = async (payload: any) => {
     if (!llmInference) {
-        return self.postMessage({ type: 'extract_text_error', payload: { error: 'Offline model not initialized.' } });
+        throw new Error('Offline model not initialized.');
     }
     
+    currentTaskAbortController = new AbortController();
+    const signal = currentTaskAbortController.signal;
+
     const { imageBitmap } = payload;
     const prompt = `Extract all text from the following image. Return only the extracted text without any extra comments or explanations.`;
     try {
-        const response = await llmInference.generateResponse([
+        const responsePromise = llmInference.generateResponse([
             `<start_of_turn>user\n${prompt}\n`, 
             { imageSource: imageBitmap }, 
             `<end_of_turn>\n<start_of_turn>model\n`,
+        ]);
+        
+        const response = await Promise.race([
+            responsePromise,
+            new Promise<string>((_, reject) => {
+                signal.addEventListener('abort', () => reject(new DOMException('Extraction cancelled.', 'AbortError')));
+            })
         ]);
         
         imageBitmap.close();
         self.postMessage({ type: 'extract_text_done', payload: { text: response.trim() } });
     } catch (error) {
         console.error('OCR Worker Error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Offline image text extraction failed.';
-        self.postMessage({ type: 'extract_text_error', payload: { error: errorMessage } });
+        throw error;
     }
 };
 
@@ -304,8 +313,12 @@ const handleTranscribe = async (payload: any) => {
 
 const executeTranscribe = async (payload: any) => {
     if (!llmInference) {
-        return self.postMessage({ type: 'transcribe_error', payload: { error: 'Offline model not initialized.' } });
+        throw new Error('Offline model not initialized.');
     }
+    
+    currentTaskAbortController = new AbortController();
+    const signal = currentTaskAbortController.signal;
+
     const { audioData, sourceLang, isStream } = payload; 
     
     let audioUrl: string | null = null;
@@ -321,14 +334,19 @@ const executeTranscribe = async (payload: any) => {
             let fullText = "";
             self.postMessage({ type: 'transcribe_start' });
             await new Promise<void>((resolve, reject) => {
+                const handleAbort = () => reject(new DOMException('Transcription cancelled.', 'AbortError'));
+                signal.addEventListener('abort', handleAbort, { once: true });
+
                 try {
-                    llmInference.generateResponse([
+                    llmInference!.generateResponse([
                         `<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, 
                         { audioSource: audioUrl }
                     ], (partialResult: string, done: boolean) => {
+                        if (signal.aborted) return;
                         fullText += partialResult;
                         self.postMessage({ type: 'transcribe_chunk', payload: { chunk: partialResult } });
                         if (done) {
+                            signal.removeEventListener('abort', handleAbort);
                             self.postMessage({ type: 'transcribe_done', payload: { text: fullText.trim(), isChunk: true } });
                             if (audioUrl) {
                                 URL.revokeObjectURL(audioUrl);
@@ -337,13 +355,21 @@ const executeTranscribe = async (payload: any) => {
                         }
                     });
                 } catch (err) {
+                    signal.removeEventListener('abort', handleAbort);
                     reject(err);
                 }
             });
         } else {
-            const response = await llmInference.generateResponse([
+            const responsePromise = llmInference.generateResponse([
                 `<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, 
                 { audioSource: audioUrl }
+            ]);
+            
+            const response = await Promise.race([
+                responsePromise,
+                new Promise<string>((_, reject) => {
+                    signal.addEventListener('abort', () => reject(new DOMException('Transcription cancelled.', 'AbortError')));
+                })
             ]);
             
             if (!response || response.trim() === "") {
@@ -357,11 +383,10 @@ const executeTranscribe = async (payload: any) => {
         }
     } catch (error) {
         console.error('Transcription Internal Error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Offline audio transcription failed.';
-        self.postMessage({ type: 'transcribe_error', payload: { error: errorMessage } });
         if (audioUrl) {
             URL.revokeObjectURL(audioUrl);
         }
+        throw error;
     }
 };
 
@@ -388,6 +413,9 @@ self.onmessage = async (event: MessageEvent) => {
             case 'cancel_task':
                 currentTaskAbortController?.abort();
                 transcribeQueue = [];
+                if (llmInference && typeof (llmInference as any).cancelProcessing === 'function') {
+                    (llmInference as any).cancelProcessing();
+                }
                 break;
             case 'extractText':
                 await handleExtractText(payload);
@@ -400,10 +428,12 @@ self.onmessage = async (event: MessageEvent) => {
         }
     } catch (error) {
         const isAbort = error instanceof DOMException && error.name === 'AbortError';
-        const baseType = type.replace('_stream', '').replace('_full', '');
+        let baseType = type.replace('_stream', '').replace('_full', '');
+        if (baseType === 'translate') baseType = 'translation';
+        if (baseType === 'extractText') baseType = 'extract_text';
         
         if (isAbort) {
-            self.postMessage({ type: 'translation_cancelled' });
+            self.postMessage({ type: `${baseType}_cancelled` });
         } else {
             const errorMessage = error instanceof Error ? error.message : `Unknown error in ${type}.`;
             self.postMessage({ type: `${baseType}_error`, payload: { error: errorMessage } });

@@ -75,8 +75,13 @@ const handleTranslate = async (payload: any) => {
                 payload: { text: intermediateEnglish, sourceLang: 'English', targetLang }
             });
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Two-step translation failed.';
-            self.postMessage({ type: 'translation_error', payload: { error: errorMessage } });
+            const isAbort = error instanceof DOMException && error.name === 'AbortError';
+            if (isAbort) {
+                self.postMessage({ type: 'translation_cancelled' });
+            } else {
+                const errorMessage = error instanceof Error ? error.message : 'Two-step translation failed.';
+                self.postMessage({ type: 'translation_error', payload: { error: errorMessage } });
+            }
             twoStepState = null;
         }
     } else {

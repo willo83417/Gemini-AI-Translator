@@ -607,6 +607,11 @@ const App: React.FC = () => {
                     setInputText('');
                     setIsLoading(false);
                     break;
+                case 'extract_text_cancelled':
+                    setInputText('');
+                    showNotification(t('notifications.imageProcessingCancelled') || 'Image processing cancelled', 'info');
+                    setIsLoading(false);
+                    break;
                 case 'transcribe_start':
                     // Do not clear text here, as we are appending chunks
                     break;
@@ -645,6 +650,12 @@ const App: React.FC = () => {
                     const errorMessage = payload.error || 'Unknown transcription error.';
                     showNotification(t('notifications.transcriptionFailed', { errorMessage }), 'error');
                     setInputText(t('notifications.transcriptionFailed', { errorMessage }));
+                    setIsLoading(false);
+                    setIsAwaitingAstTranslation(false);
+                    break;
+                case 'transcribe_cancelled':
+                    isAsrProcessingRef.current = false;
+                    setIsTranscribing(false);
                     setIsLoading(false);
                     setIsAwaitingAstTranslation(false);
                     break;
