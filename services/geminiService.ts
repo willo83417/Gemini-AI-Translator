@@ -46,8 +46,8 @@ Do not add any extra explanations, comments, or annotations. Return only the tra
             contents: text,
             config: {
                 systemInstruction,
-                // Disable thinking for faster, lower-latency translation
-                thinkingConfig: { thinkingBudget: 0 }
+                // Disable thinking for faster. The thinking switch has been modified to support Gemini 3.X and Gemma 4: "minimal"/"low"/"medium"/"high".
+                thinking_level: "minimal"
             }
         });
         
@@ -161,7 +161,10 @@ export const transcribeAudioGemini = async (
     const base64Audio = await blobToBase64(audioBlob);
     
     // Determine mime type from blob, default to audio/wav or audio/webm
+    // Gemini supports: audio/wav, audio/mp3, audio/aiff, audio/aac, audio/ogg, audio/flac
+    // MediaRecorder usually produces audio/webm;codecs=opus
     let mimeType = audioBlob.type;
+    // Strip codecs parameter if present as it might confuse some parsers, though Gemini is robust.
     if (mimeType.includes(';')) {
         mimeType = mimeType.split(';')[0];
     }

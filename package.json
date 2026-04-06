@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.30.0",
+    "@google/genai": "^1.48.0",
     "@mediapipe/tasks-genai": "0.10.27",
     "@huggingface/transformers": "^4.0.0",
     "gh-pages": "^6.3.0",
