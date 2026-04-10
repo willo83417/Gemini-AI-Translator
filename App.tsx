@@ -1179,7 +1179,7 @@ const App: React.FC = () => {
                 };
 
                 if (onDataAvailable || onChunkAvailable) {
-                    recorder.start(1000); // 1 second chunks
+                    recorder.start(2000); // 2 second chunks
                 } else {
                     recorder.start();
                 }
