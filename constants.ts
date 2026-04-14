@@ -50,35 +50,44 @@ export const OFFLINE_MODELS = [
 
 export const ASR_MODELS: AsrModel[] = [
     {
-        id: 'nicky48/whisper-large-v3-turbo-ONNX',
-        name: 'whisper-large-v3-turbo (q4f16)',
+        id: 'willopcbeta/lite-whisper-large-v3-turbo-ONNX',
+        name: 'lite-whisper-large-v3-turbo',
         quantization: {
             encoder_model: 'q4f16',
             decoder_model_merged: 'q4f16',
         },
-        size: '~600 MB'
+        size: '~590 MB'
+    },
+    {
+        id: 'willopcbeta/unsloth-whisper-large-v3-turbo-ONNX',
+        name: 'unsloth-whisper-large-v3-turbo',
+        quantization: {
+            encoder_model: 'q4f16',
+            decoder_model_merged: 'q4f16',
+        },
+        size: '~590 MB'
     },
 	{
-        id: 'willopcbeta/whisper-small-ONNX',
-        name: 'unsloth-whisper-small (q4/f16)',
+        id: 'willopcbeta/lite-whisper-small-fast-ONNX',
+        name: 'lite-whisper-small-fast',
+        quantization: {
+            encoder_model: 'q4f16',
+            decoder_model_merged: 'q4',
+        },
+        size: '~280 MB'
+    },
+	{
+        id: 'willopcbeta/unsloth-whisper-small-ONNX',
+        name: 'unsloth-whisper-small',
         quantization: {
             encoder_model: 'q4f16',
             decoder_model_merged: 'q4',
         },
         size: '~290 MB'
     },
-	{
-        id: 'Xenova/whisper-small',
-        name: 'Whisper small (q4)',
-        quantization: {
-            encoder_model: 'q4',
-            decoder_model_merged: 'q4',
-        },
-        size: '~300 MB'
-    },
     {
         id: 'Xenova/whisper-base',
-        name: 'Whisper Base (q4)',
+        name: 'Whisper Base',
         quantization: {
             encoder_model: 'q4',
             decoder_model_merged: 'q4',  //decoder_model_with_past: 'q4'

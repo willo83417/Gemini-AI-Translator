@@ -970,14 +970,6 @@ const App: React.FC = () => {
         }
     }, [isOcrAutoInitEnabled, ocrEngineStatus]);
 
-    // Unload OCR when auto-init is disabled
-    const unloadOcrCallback = useCallback(unloadOcr, [unloadOcr]);
-    useEffect(() => {
-        if (!isOcrAutoInitEnabled && ocrEngineStatus !== 'uninitialized') {
-            unloadOcrCallback();
-        }
-    }, [isOcrAutoInitEnabled, ocrEngineStatus, unloadOcrCallback]);
-
     // Central orchestrator for the loading queue
     useEffect(() => {
         const isBusy = isOfflineModelInitializing || isAsrInitializing || ocrEngineStatus === 'initializing';
@@ -1179,7 +1171,7 @@ const App: React.FC = () => {
                 };
 
                 if (onDataAvailable || onChunkAvailable) {
-                    recorder.start(2000); // 2 second chunks
+                    recorder.start(3000); // 3 second chunks
                 } else {
                     recorder.start();
                 }
@@ -1951,6 +1943,10 @@ const App: React.FC = () => {
                 ocrEngineStatus={ocrEngineStatus}
                 ocrEngineError={ocrEngineError}
                 onInitializeOcr={initializeOcr}
+                onOcrModelChange={(model) => {
+                    setSelectedOcrModel(model);
+                    localStorage.setItem('selected-ocr-model', model);
+                }}
                 currentSelectedOcrModel={selectedOcrModel}
                 currentIsOcrAutoInitEnabled={isOcrAutoInitEnabled}
                 onClearSettings={() => {

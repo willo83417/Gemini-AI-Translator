@@ -81,6 +81,7 @@ interface SettingsModalProps {
     ocrEngineStatus: OcrEngineStatus;
     ocrEngineError: string | null;
     onInitializeOcr: (modelConfig: OcrModelConfig) => Promise<void>;
+    onOcrModelChange: (model: keyof typeof OCR_MODELS) => void;
     currentSelectedOcrModel: keyof typeof OCR_MODELS;
     currentIsOcrAutoInitEnabled: boolean;
     onClearSettings: () => void;
@@ -131,6 +132,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     ocrEngineStatus,
     ocrEngineError,
     onInitializeOcr,
+    onOcrModelChange,
     currentSelectedOcrModel,
     currentIsOcrAutoInitEnabled,
     onClearSettings
@@ -300,6 +302,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             ...OCR_MODELS[selectedOcrModel].paths,
         };
         await onInitializeOcr(modelConfig);
+        onOcrModelChange(selectedOcrModel);
     };
 
     const TabButton: React.FC<{tabName: string; label: string}> = ({tabName, label}) => (
