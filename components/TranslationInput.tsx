@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { Language } from '../types';
 import { LANGUAGES } from '../constants';
 import LanguageSelector from './LanguageSelector';
-import { CameraIcon, TranslateIcon, XIcon, MicrophoneIcon, SettingsIcon, WifiIcon, WifiOffIcon, StopIcon } from './icons';
+import { CameraIcon, TranslateIcon, XIcon, MicrophoneIcon, SettingsIcon, WifiIcon, WifiOffIcon, StopIcon, SwapIcon } from './icons';
 
 interface TranslationInputProps {
     inputText: string;
@@ -17,6 +17,7 @@ interface TranslationInputProps {
     onToggleRecording: () => void;
     onOpenCamera: () => void;
     onOpenSettings: () => void;
+    onSwapLanguages: () => void;
     isOnline: boolean;
     isOfflineModeEnabled: boolean;
     isOfflineModelReady: boolean;
@@ -37,6 +38,7 @@ const TranslationInput: React.FC<TranslationInputProps> = ({
     onToggleRecording,
     onOpenCamera,
     onOpenSettings,
+    onSwapLanguages,
     isOnline,
     isOfflineModeEnabled,
     isOfflineModelReady,
@@ -65,11 +67,16 @@ const TranslationInput: React.FC<TranslationInputProps> = ({
     return (
         <div className="bg-white rounded-xl shadow-md h-full flex flex-col p-4">
             <div className="flex justify-between items-center mb-2">
-                <LanguageSelector
-                    selectedLang={sourceLang}
-                    setSelectedLang={setSourceLang}
-                    languages={LANGUAGES}
-                />
+                <div className="flex items-center space-x-2">
+                    <LanguageSelector
+                        selectedLang={sourceLang}
+                        setSelectedLang={setSourceLang}
+                        languages={LANGUAGES}
+                    />
+                    <button onClick={onSwapLanguages} className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500" aria-label={t('translationInput.swapLanguages', 'Swap Languages')}>
+                        <SwapIcon />
+                    </button>
+                </div>
                 <div className="flex items-center space-x-4 text-gray-500">
                     <div title={isOnline ? t('translationInput.online') : t('translationInput.offline')}>
                         {isOnline ? <WifiIcon className="text-green-500"/> : <WifiOffIcon className="text-gray-400"/>}

@@ -54,6 +54,8 @@ const resources = {
         astStop: 'Stop speech translation',
         astStart: 'Start speech translation',
         astTitle: 'Automatic Speech Translation',
+        expandText: 'Expand text',
+        expandedView: 'Expanded View',
       },
       settings: {
         title: 'Settings',
@@ -271,6 +273,8 @@ const resources = {
         astStop: '音声翻訳を停止',
         astStart: '音声翻訳を開始',
         astTitle: '自動音声翻訳',
+        expandText: 'テキストを拡大',
+        expandedView: '拡大表示',
       },
       settings: {
         title: '設定',
@@ -488,6 +492,8 @@ const resources = {
         astStop: '停止語音翻譯',
         astStart: '開始語音翻譯',
         astTitle: '即時語音翻譯',
+        expandText: '放大顯示',
+        expandedView: '譯文放大檢視',
       },
       settings: {
         title: '設定',

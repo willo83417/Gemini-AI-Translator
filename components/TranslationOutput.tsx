@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { Language } from '../types';
 import { LANGUAGES, OFFLINE_MODELS } from '../constants';
 import LanguageSelector from './LanguageSelector';
-import { FemaleVoiceIcon, MaleVoiceIcon, CopyIcon, HistoryIcon, SwapIcon, FlipScreenIcon, XIcon, SpeakerIcon, MicrophoneIcon } from './icons';
+import { FemaleVoiceIcon, MaleVoiceIcon, CopyIcon, HistoryIcon, MaximizeIcon, FlipScreenIcon, XIcon, SpeakerIcon, MicrophoneIcon } from './icons';
 
 interface TranslationOutputProps {
     translatedText: string;
@@ -11,7 +11,7 @@ interface TranslationOutputProps {
     setTargetLang: (lang: Language) => void;
     isLoading: boolean;
     onSpeak: (gender: 'female' | 'male') => void;
-    onSwapLanguages: () => void;
+    onExpandText: () => void;
     onOpenHistory: () => void;
     onClearText: () => void;
     isOfflineModeEnabled: boolean;
@@ -34,7 +34,7 @@ const TranslationOutput: React.FC<TranslationOutputProps> = ({
     setTargetLang,
     isLoading,
     onSpeak,
-    onSwapLanguages,
+    onExpandText,
     onOpenHistory,
     onClearText,
     isOfflineModeEnabled,
@@ -94,8 +94,8 @@ const TranslationOutput: React.FC<TranslationOutputProps> = ({
                         setSelectedLang={setTargetLang}
                         languages={LANGUAGES.filter(l => l.code !== 'auto')}
                     />
-                    <button onClick={onSwapLanguages} className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500">
-                        <SwapIcon />
+                    <button onClick={onExpandText} disabled={!translatedText} className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500 disabled:text-gray-300 disabled:cursor-not-allowed" aria-label={t('translationOutput.expandText', 'Expand Text')}>
+                        <MaximizeIcon />
                     </button>
                     <div className="flex items-center space-x-4 text-gray-500">
                         <button onClick={handleFlip} className="hover:text-blue-500" aria-label={t('translationOutput.flipScreenAriaLabel')}><FlipScreenIcon /></button>

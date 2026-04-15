@@ -6,6 +6,7 @@ import TranslationOutput from './components/TranslationOutput';
 import CameraView from './components/CameraView';
 import SettingsModal from './components/SettingsModal';
 import HistoryModal from './components/HistoryModal';
+import ExpandedTextModal from './components/ExpandedTextModal';
 import { translateTextStream as translateTextGeminiStream, translateImage as translateImageGemini, transcribeAudioGemini } from './services/geminiService';
 import { translateTextStream as translateTextOpenAIStream, translateImage as translateImageOpenAI, transcribeAudioOpenAI } from './services/openaiService';
 import { downloadManager, type DownloadProgress } from './services/downloadManager';
@@ -240,6 +241,7 @@ const App: React.FC = () => {
     
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+    const [isExpandedTextOpen, setIsExpandedTextOpen] = useState(false);
     const [history, setHistory] = useState<TranslationHistoryItem[]>([]);
     
     // Shared settings
@@ -1845,7 +1847,7 @@ const App: React.FC = () => {
                         setTargetLang={setTargetLang}
                         isLoading={isLoading}
                         onSpeak={handleSpeak}
-                        onSwapLanguages={handleSwapLanguages}
+                        onExpandText={() => setIsExpandedTextOpen(true)}
                         onOpenHistory={() => setIsHistoryOpen(true)}
                         onClearText={() => setTranslatedText('')}
                         isOfflineModeEnabled={isOfflineModeEnabled}
@@ -1875,6 +1877,7 @@ const App: React.FC = () => {
                         onToggleRecording={handleToggleRecording}
                         onOpenCamera={() => setIsCameraOpen(true)}
                         onOpenSettings={() => setIsSettingsOpen(true)}
+                        onSwapLanguages={handleSwapLanguages}
                         isOnline={isOnline}
                         isOfflineModeEnabled={isOfflineModeEnabled}
                         isOfflineModelReady={isOfflineModelReady}
@@ -1963,6 +1966,12 @@ const App: React.FC = () => {
                 history={history}
                 onSelectHistory={handleSelectHistory}
                 onClearHistory={handleClearHistory}
+            />
+
+            <ExpandedTextModal
+                isOpen={isExpandedTextOpen}
+                onClose={() => setIsExpandedTextOpen(false)}
+                text={translatedText}
             />
         </div>
     );
