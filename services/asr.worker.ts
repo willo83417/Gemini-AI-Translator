@@ -144,6 +144,8 @@ class Transcriber {
                 task: 'transcribe',
                 temperature: 0.3,
                 streamer: streamer, // Pass the streamer to generate configuration
+                chunk_length_s: 30, // Limits memory scaling and improves continuous long-form decoding
+                stride_length_s: 5, // Adds overlap between chunks to prevent word-cutting boundaries
             };
     
             // Use the specific promptLanguage code to look up the correct prompt.
