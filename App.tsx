@@ -752,7 +752,7 @@ const App: React.FC = () => {
                 }
                 break;
             case 'log':
-                console.log('[ASR Worker]:', payload);
+                //console.log('[ASR Worker]:', payload);	//Close ASR log
                 break;
             default:
                 break;
