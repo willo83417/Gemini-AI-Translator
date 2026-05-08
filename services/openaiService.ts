@@ -30,6 +30,7 @@ export const translateTextStream = async (
             },
             body: JSON.stringify({
                 model: modelName,
+
                 messages: [
 					{ 
 						role: 'user', 
@@ -45,6 +46,7 @@ export const translateTextStream = async (
 					},
                 ],
                 temperature: 0.3,
+				think: false,
                 stream: true, // Enable streaming
             }),
             signal, // Pass the AbortSignal to the fetch request
