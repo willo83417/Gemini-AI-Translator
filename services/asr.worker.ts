@@ -1,4 +1,4 @@
-import { pipeline, env, TextStreamer } from '@huggingface/transformers';
+import { pipeline, env, TextStreamer, StoppingCriteria, StoppingCriteriaList } from '@huggingface/transformers';
 
 // --- Environment Configuration ---
 env.backends.onnx.executionProviders = ['webgpu', 'wasm'];
@@ -8,7 +8,7 @@ env.cacheDir = 'transformers-cache';
 
 // --- Worker State & Communication ---
 interface WorkerMessage {
-    type: 'load' | 'transcribe' | 'unload';
+    type: 'load' | 'transcribe' | 'unload' | 'cancel';
     payload?: any;
 }
 
@@ -26,6 +26,23 @@ const PROMPT_MAP: Record<string, string> = {
     'zh-Hans': '请使用(zh-Hans)简体中文输出。'
 };
 
+class InterruptableStoppingCriteria extends StoppingCriteria {
+    interrupted: boolean = false;
+    
+    interrupt() {
+        this.interrupted = true;
+    }
+    
+    reset() {
+        this.interrupted = false;
+    }
+    
+    _call(input_ids: any, scores: any) {
+        const batchSize = input_ids.dims ? input_ids.dims[0] : (input_ids.length || 1);
+        return new Array(batchSize).fill(this.interrupted);
+    }
+}
+
 class Transcriber {
     private transcriber: any = null;
     private loading: boolean = false;
@@ -34,6 +51,11 @@ class Transcriber {
     private isProcessing: boolean = false;
     private abortCurrent: boolean = false;
     private currentProcessingIsFinal: boolean = false;
+    private stoppingCriteria: InterruptableStoppingCriteria;
+
+    constructor() {
+        this.stoppingCriteria = new InterruptableStoppingCriteria();
+    }
 
     async load(payload: { modelId: string, quantization: any }) {
         const { modelId, quantization } = payload;
@@ -65,7 +87,7 @@ class Transcriber {
             this.transcriber = await pipeline('automatic-speech-recognition', modelId, {
                 progress_callback: (progress: any) => {
                      const now = Date.now();
-                     if (now - lastProgressTime > 100 || progress.status === 'done') {
+                     if (now - lastProgressTime > 100 || progress.status === 'done' || progress.status === 'ready' || progress.status === 'progress_total') {
                          post({ type: 'progress', payload: progress });
                          lastProgressTime = now;
                      }
@@ -116,6 +138,7 @@ class Transcriber {
 
         this.isProcessing = true;
         this.abortCurrent = false;
+        this.stoppingCriteria.reset();
         const { audioData, asrLanguage, promptLanguage, isFinal } = this.processingQueue.shift()!;
         this.currentProcessingIsFinal = isFinal;
 
@@ -131,7 +154,7 @@ class Transcriber {
                 skip_prompt: true,
                 skip_special_tokens: true,
                 callback_function: (text: string) => {
-                    if (this.abortCurrent) {
+                    if (this.abortCurrent || this.stoppingCriteria.interrupted) {
                         throw new Error('ABORTED');
                     }
                     fullTranscription += text;
@@ -144,6 +167,7 @@ class Transcriber {
                 task: 'transcribe',
                 temperature: 0.3,
                 streamer: streamer, // Pass the streamer to generate configuration
+                stopping_criteria: new StoppingCriteriaList([this.stoppingCriteria]),
                 chunk_length_s: 30, // Limits memory scaling and improves continuous long-form decoding
                 stride_length_s: 5, // Adds overlap between chunks to prevent word-cutting boundaries
             };
@@ -161,7 +185,7 @@ class Transcriber {
             
             const output = await this.transcriber(audioData, generationOptions);
             
-            if (this.abortCurrent) {
+            if (this.abortCurrent || this.stoppingCriteria.interrupted) {
                  throw new Error('ABORTED');
             }
 
@@ -206,6 +230,14 @@ class Transcriber {
             post({ type: 'error', payload: `Error unloading ASR model: ${errorMessage}` });
         }
     }
+
+    cancel() {
+        this.abortCurrent = true;
+        this.stoppingCriteria.interrupt();
+        this.processingQueue = [];
+        this.isProcessing = false;
+        post({ type: 'log', payload: 'ASR transcription cancelled.' });
+    }
 }
 
 const transcriber = new Transcriber();
@@ -230,6 +262,9 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
             break;
         case 'unload':
             transcriber.unload();
+            break;
+        case 'cancel':
+            transcriber.cancel();
             break;
         default:
             console.warn(`ASR Worker received unknown message type: ${type}`);

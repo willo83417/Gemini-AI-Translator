@@ -1,31 +1,52 @@
-import { env } from '@huggingface/transformers';
+import { env, ModelRegistry } from '@huggingface/transformers';
 
 // --- Cache Configuration ---
-const CACHE_NAME = 'transformers-cache';
-
 // Configure transformers.js to use WebGPU and the browser's cache.
 // This is done here to ensure it's configured on the main thread as well as the worker.
 env.backends.onnx.executionProviders = ['webgpu', 'wasm'];
 env.useBrowserCache = true;
-env.cacheDir = CACHE_NAME;
-
+env.useWasmCache = true;
+env.cacheDir = 'transformers-cache';
 
 /**
  * Checks if a specific ASR model is already present in the browser cache
- * by looking for its config.json file.
  * @param modelId The Hugging Face ID of the model to check.
  * @returns A promise that resolves to true if cached, false otherwise.
  */
-export const checkAsrModelCacheStatus = async (modelId: string): Promise<boolean> => {
-    if (!('caches' in window)) return false;
-
+export const checkAsrModelCacheStatus = async (modelId: string, quantization?: any): Promise<boolean> => {
     try {
-        const cache = await caches.open(CACHE_NAME);
-        const modelUrl = `https://huggingface.co/${modelId}/resolve/main/config.json`;
-        const match = await cache.match(modelUrl);
-        return !!match;
-    } catch (err)
- {
+        // We do a robust custom Cache API check because ModelRegistry.is_pipeline_cached 
+        // sometimes incorrectly returns false for Whisper models due to optional files.
+        if (!('caches' in self)) return false;
+
+        const cache = await caches.open('transformers-cache');
+        const keys = await cache.keys();
+        const urls = keys.map(k => k.url);
+
+        // Check for essential base files
+        const hasConfig = urls.some(url => url.includes(`${modelId}/resolve/main/config.json`));
+        const hasTokenizer = urls.some(url => url.includes(`${modelId}/resolve/main/tokenizer.json`) || url.includes(`${modelId}/resolve/main/tokenizer_config.json`));
+        
+        if (!hasConfig || !hasTokenizer) {
+            return false;
+        }
+
+        // Check for required model binaries depending on quantization
+        if (quantization && typeof quantization === 'object') {
+            const hasAllBinaries = Object.entries(quantization).every(([key, val]) => {
+                const checkString1 = `${modelId}/resolve/main/onnx/${key}_${val}.onnx`;
+                const checkString2 = `${modelId}/resolve/main/onnx/${key}.onnx`;
+                return urls.some(url => url.includes(checkString1) || url.includes(checkString2));
+            });
+            if (!hasAllBinaries) return false;
+        } else {
+            const hasEnc = urls.some(url => url.includes(`${modelId}/resolve/main/onnx/encoder_model`));
+            const hasDec = urls.some(url => url.includes(`${modelId}/resolve/main/onnx/decoder_model`));
+            if (!hasEnc || !hasDec) return false;
+        }
+
+        return true;
+    } catch (err) {
         console.error(`Error checking ASR cache status for ${modelId}:`, err);
         return false;
     }
@@ -38,7 +59,8 @@ export const clearAsrCache = async (): Promise<void> => {
     if (!('caches' in window)) return;
 
     try {
-        await caches.delete(CACHE_NAME);
+        // transformers.js v4 uses different cache names, commonly "transformers-cache"
+        await caches.delete('transformers-cache');
         console.log("ASR model cache cleared successfully.");
     } catch (err) {
         console.error("Error clearing ASR model cache:", err);

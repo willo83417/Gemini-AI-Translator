@@ -684,7 +684,7 @@ const App: React.FC = () => {
     const checkAllAsrCacheStatus = useCallback(async () => {
         const statuses: Record<string, boolean> = {};
         for (const model of ASR_MODELS) {
-            statuses[model.id] = await checkAsrModelCacheStatus(model.id);
+            statuses[model.id] = await checkAsrModelCacheStatus(model.id, model.quantization);
         }
         return statuses;
     }, []);
@@ -693,8 +693,12 @@ const App: React.FC = () => {
         const { type, payload } = e.data;
         switch (type) {
             case 'progress':
-                if (payload.status === 'progress' || payload.status === 'download') {
-                    setAsrLoadingProgress({ file: payload.file, progress: payload.progress });
+                if (payload.status === 'progress_total') {
+                    setAsrLoadingProgress({ file: payload.name || payload.file || 'Loading model...', progress: payload.progress || 0 });
+                } else if (payload.status === 'progress' || payload.status === 'download' || payload.status === 'init') {
+                    setAsrLoadingProgress({ file: payload.name || payload.file || 'model_file', progress: payload.progress || 0 });
+                } else if (payload.status === 'ready' || payload.status === 'done') {
+                    setAsrLoadingProgress({ file: payload.name || payload.file || 'model_file', progress: 100 });
                 }
                 break;
             case 'error':
@@ -1033,10 +1037,16 @@ const App: React.FC = () => {
         } else {
             translationAbortControllerRef.current?.abort();
         }
+        
+        if (asrWorkerRef.current) {
+            asrWorkerRef.current.postMessage({ type: 'cancel' });
+        }
+        
         if (audioAbortControllerRef.current) {
             audioAbortControllerRef.current.abort();
             audioAbortControllerRef.current = null;
         }
+        setIsTranscribing(false);
     }, [isOfflineModeEnabled]);
 
     const handleSwapLanguages = useCallback(() => {
