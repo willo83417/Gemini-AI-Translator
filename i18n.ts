@@ -211,6 +211,8 @@ const resources = {
       },
       common: {
         searchLanguage: 'Search language...',
+        cancel: 'Cancel',
+        confirm: 'Confirm',
         status: {
           not_started: 'Not Started',
           downloading: 'Downloading',
@@ -430,6 +432,8 @@ const resources = {
       },
       common: {
         searchLanguage: '言語を検索...',
+        cancel: 'キャンセル',
+        confirm: '確認',
         status: {
           not_started: '未開始',
           downloading: 'ダウンロード中',
@@ -649,6 +653,8 @@ const resources = {
       },
       common: {
         searchLanguage: '搜尋語言...',
+        cancel: '取消',
+        confirm: '確認',
         status: {
           not_started: '未開始',
           downloading: '下載中',

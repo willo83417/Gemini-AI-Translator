@@ -1,131 +1,134 @@
-
-import { useState, useCallback } from 'react';
-import * as ocr from "esearch-ocr";
-import * as ort from "onnxruntime-web";
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { OcrEngineStatus, EsearchOCROutput, OcrModelConfig } from '../types';
-import { getFromDB, setInDB } from '../utils/db';
 
 export const usePaddleOcr = () => {
-    const [ocrInstance, setOcrInstance] = useState<any>(null);
+    const workerRef = useRef<Worker | null>(null);
     const [status, setStatus] = useState<OcrEngineStatus>('uninitialized');
     const [error, setError] = useState<string | null>(null);
+    
+    // Use refs for callbacks to avoid stale closures in worker event listener
+    const pendingResolveRef = useRef<((value: any) => void) | null>(null);
+    const pendingRejectRef = useRef<((reason?: any) => void) | null>(null);
+
+    const cleanup = useCallback(() => {
+        if (workerRef.current) {
+            workerRef.current.terminate();
+            workerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        return cleanup;
+    }, [cleanup]);
+
+    const initWorker = useCallback(() => {
+        //console.log('[usePaddleOcr] Initializing worker...');
+        cleanup();
+        const worker = new Worker(new URL('../services/ocr.worker.ts', import.meta.url), { type: 'module' });
+        
+        worker.onmessage = (e) => {
+            const { type, payload } = e.data;
+            //console.log(`[usePaddleOcr] Worker message: ${type}`, payload);
+            switch (type) {
+                case 'status':
+                    setStatus(payload);
+                    break;
+                case 'error':
+                    //console.error('[usePaddleOcr] Worker reported error:', payload);
+                    setError(payload);
+                    setStatus('error');
+                    if (pendingRejectRef.current) {
+                        pendingRejectRef.current(new Error(payload));
+                        pendingRejectRef.current = null;
+                        pendingResolveRef.current = null;
+                    }
+                    break;
+                case 'result':
+                    if (pendingResolveRef.current) {
+                        pendingResolveRef.current(payload);
+                        pendingResolveRef.current = null;
+                        pendingRejectRef.current = null;
+                    }
+                    break;
+            }
+        };
+
+        worker.onerror = (err) => {
+            //console.error('[usePaddleOcr] Worker terminal error:', err);
+            setError('Worker error: ' + (err.message || 'Unknown error'));
+            setStatus('error');
+            if (pendingRejectRef.current) {
+                pendingRejectRef.current(new Error('Worker crashed'));
+                pendingRejectRef.current = null;
+                pendingResolveRef.current = null;
+            }
+        };
+
+        workerRef.current = worker;
+        return worker;
+    }, [cleanup]);
 
     const unloadOcr = useCallback(() => {
-        setOcrInstance(null);
+        //console.log('[usePaddleOcr] Unloading OCR...');
+        if (workerRef.current) {
+            workerRef.current.postMessage({ type: 'unload' });
+        }
         setStatus('uninitialized');
         setError(null);
-        console.log("PaddleOCR engine has been unloaded.");
     }, []);
 
     const initializeOcr = useCallback(async (modelConfig: OcrModelConfig) => {
-        // Unload any existing instance before initializing a new one.
-        if (ocrInstance) {
-            console.log("Unloading previous OCR instance before switching model.");
-            setOcrInstance(null); // Allow garbage collection
-        }
-
+        //console.log('[usePaddleOcr] initializeOcr called with config:', modelConfig);
         setStatus('initializing');
-        setError(null);
-        try {
-            // In browser environments using UMD bundles via importmap, 
-            // the module might be wrapped. We extract the actual 'ort' object.
-            const ortInstance: any = (ort as any).default || ort;
-            
-            // ONNX runtime is now configured globally via `window.ortConfig` in index.html
-            // to prevent timing issues with SharedArrayBuffer checks.
-
-            const DET_MODEL_KEY = 'det-model';
-            const REC_MODEL_KEY = `rec-model-${modelConfig.key}`;
-            const DICT_KEY = `dict-${modelConfig.key}`;
-
-            let detBuffer = await getFromDB<ArrayBuffer>(DET_MODEL_KEY);
-            let recBuffer = await getFromDB<ArrayBuffer>(REC_MODEL_KEY);
-            let dictText = await getFromDB<string>(DICT_KEY);
-            
-            const fetchPromises: Promise<void>[] = [];
-
-            if (!detBuffer) {
-                fetchPromises.push(
-                    fetch(modelConfig.detPath)
-                        .then(res => res.arrayBuffer())
-                        .then(async buffer => {
-                            detBuffer = buffer;
-                            await setInDB(DET_MODEL_KEY, buffer);
-                        })
-                );
-            }
-            if (!recBuffer) {
-                fetchPromises.push(
-                    fetch(modelConfig.recPath)
-                        .then(res => res.arrayBuffer())
-                        .then(async buffer => {
-                            recBuffer = buffer;
-                            await setInDB(REC_MODEL_KEY, buffer);
-                        })
-                );
-            }
-            if (!dictText) {
-                fetchPromises.push(
-                    fetch(modelConfig.dictPath)
-                        .then(res => res.arrayBuffer())
-                        .then(async buffer => {
-                            const decoder = new TextDecoder('utf-8');
-                            dictText = decoder.decode(buffer);
-                            await setInDB(DICT_KEY, dictText);
-                        })
-                );
-            }
-
-            if (fetchPromises.length > 0) {
-                 await Promise.all(fetchPromises);
-            }
-            
-            if (!detBuffer || !recBuffer || !dictText) {
-                throw new Error("Failed to load required assets.");
-            }
-
-            // Init esearch-ocr
-            // IMPORTANT: Converting ArrayBuffer to Uint8Array is necessary for InferenceSession.create.
-            const instance = await (ocr as any).init({
-                det: {
-                    input: new Uint8Array(detBuffer),
-                },
-                rec: {
-                    input: new Uint8Array(recBuffer),
-                    decodeDic: dictText,
-					optimize: {
-						space: false, // v3 v4識別時英文空格不理想，但v5得到了改善，默認為true，需要传入false来关闭
-					}
-                },
-                ort: ortInstance,
-            });
-
-            setOcrInstance(instance);
-            setStatus('ready');
-        } catch (e: any)
-{
-            setError(`Initialization failed: ${e.message || 'Check models'}`);
-            setStatus('error');
-            console.error('OCR Engine initialization error:', e);
-        }
-    }, [ocrInstance]); // Dependency on ocrInstance to ensure it can be unloaded
+        const worker = initWorker();
+        worker.postMessage({ type: 'load', payload: modelConfig });
+    }, [initWorker]);
 
     const recognize = useCallback(async (image: HTMLImageElement | HTMLCanvasElement): Promise<{ result: EsearchOCROutput, time: number } | null> => {
-        if (status !== 'ready' || !ocrInstance) {
+        //console.log('[usePaddleOcr] recognize called, status:', status);
+        if (status !== 'ready' || !workerRef.current) {
+            //console.warn('[usePaddleOcr] recognize called but not ready. Status:', status);
             return null;
         }
 
         try {
-            const startTime = performance.now();
-            const recognitionResult: EsearchOCROutput = await ocrInstance.ocr(image);
-            const endTime = performance.now();
+            //console.log('[usePaddleOcr] Creating ImageBitmap...');
+            const imageBitmap = await createImageBitmap(image);
+            //console.log('[usePaddleOcr] ImageBitmap created, sending to worker...');
+            
+            return new Promise((resolve, reject) => {
+                pendingResolveRef.current = resolve;
+                pendingRejectRef.current = reject;
+                
+                const timeoutId = setTimeout(() => {
+                    if (pendingResolveRef.current === resolve) {
+                        //console.error('[usePaddleOcr] Recognition timed out after 15s');
+                        pendingResolveRef.current = null;
+                        pendingRejectRef.current = null;
+                        reject(new Error('OCR recognition timed out'));
+                    }
+                }, 15000);
 
-            return { result: recognitionResult, time: endTime - startTime };
-        } catch (e: any) {
-            console.error('Recognition error:', e);
-            throw new Error(e.message || 'OCR processing failed.');
+                if (workerRef.current) {
+                    workerRef.current.postMessage(
+                        { type: 'recognize', payload: { imageBitmap } }, 
+                        [imageBitmap]
+                    );
+                } else {
+                    clearTimeout(timeoutId);
+                    //console.error('[usePaddleOcr] Worker ref lost during recognize');
+                    reject(new Error('Worker not initialized'));
+                }
+            }).finally(() => {
+                // The actual timeout cleanup is handled inside the timeout or message listeners
+                // But we can clear it if we tracked it differently. 
+                // For simplicity here, the resolve/reject logic inside onmessage handles it.
+            });
+        } catch (err) {
+            //console.error('[usePaddleOcr] Failed to create ImageBitmap or start OCR:', err);
+            return null;
         }
-    }, [ocrInstance, status]);
+    }, [status]);
 
     return { status, error, recognize, initializeOcr, unloadOcr };
 };

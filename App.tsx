@@ -984,6 +984,7 @@ const App: React.FC = () => {
         }
 
         const nextTask = loadingQueue[0];
+        //console.log('[Orchestrator] Starting task:', nextTask, 'Status:', { llm: isOfflineModelInitializing, asr: isAsrInitializing, ocr: ocrEngineStatus });
         
         // Dequeue the task
         setLoadingQueue(q => q.slice(1));
@@ -1612,6 +1613,7 @@ const App: React.FC = () => {
     }, [isAstRecording, isRecording, targetLang, showNotification, t, isOfflineAsrEnabled, isRealtimeAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, offlineSupportAudio, isOfflineModelReady, getOrCreateWorker, performReverseTranslate, i18n]);
 
     const handleImageCaptured = useCallback(async (imageDataUrl: string) => {
+        //console.log('[App] handleImageCaptured triggered. OCR Status:', ocrEngineStatus);
         setIsCameraOpen(false);
         setIsLoading(true);
         setInputText(t('notifications.processingImage'));
@@ -1623,8 +1625,14 @@ const App: React.FC = () => {
                 const image = new Image();
                 image.src = imageDataUrl;
                 await new Promise<void>((resolve, reject) => {
-                    image.onload = () => resolve();
-                    image.onerror = (e) => reject(e);
+                    image.onload = () => {
+                        //console.log('[App] Local image loaded for OCR');
+                        resolve();
+                    };
+                    image.onerror = (e) => {
+                        //console.error('[App] Failed to load local image for OCR');
+                        reject(e);
+                    };
                 });
     
                 const recognitionData = await recognize(image);
@@ -1643,6 +1651,8 @@ const App: React.FC = () => {
                 }
                 return;
             }
+            
+            //console.log('[App] Falling back to non-local OCR pathways...');
     
             // Fallback to other methods
             if (isOfflineModeEnabled) {

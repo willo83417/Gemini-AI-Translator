@@ -3,8 +3,8 @@ import type { Language, AsrModel } from './types';
 export const LANGUAGES: Language[] = [
     { code: 'auto', name: 'languages.autoDetect' },
     { code: 'en', name: 'languages.english', asrCode: 'en' },
-    { code: 'zh-Hant', name: 'languages.chineseTraditional', asrCode: 'zh' },
-    { code: 'zh-Hant-HK', name: 'languages.chineseTraditionalHK', asrCode: 'zh' },
+    { code: 'zh-TW', name: 'languages.chineseTraditional', asrCode: 'zh' },
+    { code: 'zh-HK', name: 'languages.chineseTraditionalHK', asrCode: 'zh' },
     { code: 'zh-Hans', name: 'languages.chineseSimplified', asrCode: 'zh' },
     { code: 'es', name: 'languages.spanish', asrCode: 'es' },
     { code: 'ja', name: 'languages.japanese', asrCode: 'ja' },
@@ -68,7 +68,7 @@ export const ASR_MODELS: AsrModel[] = [
         size: '~590 MB'
     },
 	{
-        id: 'willopcbeta/lite-whisper-small-fast-ONNX',
+        id: 'willopcbeta/lite-whisper-small-fast-ONNX-v2',
         name: 'lite-whisper-small-fast',
         quantization: {
             encoder_model: 'q4f16',
