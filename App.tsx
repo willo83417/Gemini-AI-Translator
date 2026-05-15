@@ -13,6 +13,7 @@ import { downloadManager, type DownloadProgress } from './services/downloadManag
 import { processAudioForTranscription, checkAsrModelCacheStatus, clearAsrCache } from './services/asrService';
 import { useWebSpeech } from './hooks/useWebSpeech';
 import { usePaddleOcr } from './hooks/usePaddleOcr';
+import { deleteOcrModelCache } from './utils/db';
 import type { Language, TranslationHistoryItem, CustomOfflineModel, EsearchOCROutput, EsearchOCRItem } from './types';
 import { LANGUAGES, OFFLINE_MODELS, ASR_MODELS, OCR_MODELS } from './constants';
 
@@ -1619,6 +1620,11 @@ const App: React.FC = () => {
         setInputText(t('notifications.processingImage'));
         setTranslatedText('');
     
+        // Await two animation frames AND a short timeout to securely flush the React unmount 
+        // before starting heavy worker tasks (WebGPU compilation might freeze GPU/UI threads)
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await new Promise(resolve => setTimeout(resolve, 50));
+
         try {
             // Priority 1: Use local OCR if it's initialized and ready.
             if (ocrEngineStatus === 'ready') {
@@ -1966,6 +1972,10 @@ const App: React.FC = () => {
                 ocrEngineStatus={ocrEngineStatus}
                 ocrEngineError={ocrEngineError}
                 onInitializeOcr={initializeOcr}
+                onClearOcrModel={async (modelKey) => {
+                    await deleteOcrModelCache(modelKey);
+                    showNotification(t('notifications.modelDeleted', { defaultValue: 'Model deleted successfully' }), 'success');
+                }}
                 onOcrModelChange={(model) => {
                     setSelectedOcrModel(model);
                     localStorage.setItem('selected-ocr-model', model);

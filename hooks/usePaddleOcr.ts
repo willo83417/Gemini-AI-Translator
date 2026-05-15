@@ -96,18 +96,18 @@ export const usePaddleOcr = () => {
             const imageBitmap = await createImageBitmap(image);
             //console.log('[usePaddleOcr] ImageBitmap created, sending to worker...');
             
-            return new Promise((resolve, reject) => {
+            return new Promise<{ result: EsearchOCROutput, time: number } | null>((resolve, reject) => {
                 pendingResolveRef.current = resolve;
                 pendingRejectRef.current = reject;
                 
                 const timeoutId = setTimeout(() => {
                     if (pendingResolveRef.current === resolve) {
-                        //console.error('[usePaddleOcr] Recognition timed out after 15s');
+                        //console.error('[usePaddleOcr] Recognition timed out after 40s');
                         pendingResolveRef.current = null;
                         pendingRejectRef.current = null;
                         reject(new Error('OCR recognition timed out'));
                     }
-                }, 15000);
+                }, 40000);
 
                 if (workerRef.current) {
                     workerRef.current.postMessage(

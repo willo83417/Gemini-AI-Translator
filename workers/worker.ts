@@ -150,23 +150,44 @@ const handleInit = async (payload: any) => {
             throw new Error('WebGPU is not supported.');
         }
 
-        if (!modelBlob) {
-            throw new Error(`Model data for ${modelSource} not found.`);
-        }
-        
-        const modelUrl = URL.createObjectURL(modelBlob);
         const filesetResolver = await FilesetResolver.forGenAiTasks(MEDIAPIPE_WASM);
 
         const { 
             maxTokens = 2048, topK = 40, temperature = 0.3, randomSeed = 5, supportAudio = false, maxNumImages = 0
         } = options;
         
+        let modelUrl: string | null = null;
+        let fileObj: File | null = null;
+
+        try {
+            if ('storage' in navigator && 'getDirectory' in navigator.storage) {
+                const root = await navigator.storage.getDirectory();
+                try {
+                    const fileHandle = await root.getFileHandle(modelSource);
+                    fileObj = await fileHandle.getFile();
+                } catch(e) {
+                    console.log("Could not get File from OPFS, fallback to blob.", e);
+                }
+            }
+        } catch (e) {
+            console.warn("OPFS error checking:", e);
+        }
+
+        if (fileObj) {
+            modelUrl = URL.createObjectURL(fileObj);
+        } else if (modelBlob) {
+            modelUrl = URL.createObjectURL(modelBlob);
+        } else {
+             throw new Error(`Model data for ${modelSource} not found.`);
+        }
+        
         llmInference = await LlmInference.createFromOptions(filesetResolver, {
             baseOptions: { modelAssetPath: modelUrl, delegate: 'GPU' },
             maxTokens, topK, temperature, randomSeed, supportAudio, maxNumImages,
         });
-        
+
         URL.revokeObjectURL(modelUrl);
+        
         self.postMessage({ type: 'init_done', payload: { modelIdentifier: modelSource } });
 
     } catch (error) {
@@ -254,7 +275,7 @@ const performTranslation = (text: string, sourceLang: string, targetLang: string
                 prompt = `<start_of_turn>user\n${promptText}<end_of_turn>\n<start_of_turn>model\n`;
             }
 
-            llmInference.generateResponse(prompt, streamCallback);
+            llmInference!.generateResponse(prompt, streamCallback);
         } catch (error) {
             signal.removeEventListener('abort', handleAbort);
             reject(error);
@@ -273,7 +294,7 @@ const handleExtractText = async (payload: any) => {
     const { imageBitmap } = payload;
     const prompt = `Extract all text from the following image. Return only the extracted text without any extra comments or explanations.`;
     try {
-        const responsePromise = llmInference.generateResponse([
+        const responsePromise = llmInference!.generateResponse([
             `<start_of_turn>user\n${prompt}\n`, 
             { imageSource: imageBitmap }, 
             `<end_of_turn>\n<start_of_turn>model\n`,
@@ -360,7 +381,7 @@ const executeTranscribe = async (payload: any) => {
                 }
             });
         } else {
-            const responsePromise = llmInference.generateResponse([
+            const responsePromise = llmInference!.generateResponse([
                 `<start_of_turn>user\n ${prompt} <end_of_turn>\n<start_of_turn>model\n`, 
                 { audioSource: audioUrl }
             ]);
