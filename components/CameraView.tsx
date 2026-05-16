@@ -124,8 +124,43 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
             const reader = new FileReader();
             reader.onload = (e) => {
                 const imageDataUrl = e.target?.result as string;
-                if(imageDataUrl) setPreviewImage(imageDataUrl);
-                setIsCapturing(false);
+                if(imageDataUrl) {
+                    const img = new Image();
+                    img.onload = () => {
+                        let { width, height } = img;
+                        const maxDimension = 1024;
+                        
+                        if (width > maxDimension || height > maxDimension) {
+                            if (width > height) {
+                                height = Math.round((height * maxDimension) / width);
+                                width = maxDimension;
+                            } else {
+                                width = Math.round((width * maxDimension) / height);
+                                height = maxDimension;
+                            }
+                        }
+                        
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                            ctx.drawImage(img, 0, 0, width, height);
+                            const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                            setPreviewImage(resizedDataUrl);
+                        } else {
+                            setPreviewImage(imageDataUrl);
+                        }
+                        setIsCapturing(false);
+                    };
+                    img.onerror = () => {
+                        setPreviewImage(imageDataUrl);
+                        setIsCapturing(false);
+                    };
+                    img.src = imageDataUrl;
+                } else {
+                    setIsCapturing(false);
+                }
             };
             reader.readAsDataURL(file);
         } catch(err) {
