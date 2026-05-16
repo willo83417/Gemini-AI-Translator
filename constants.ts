@@ -2,17 +2,17 @@ import type { Language, AsrModel } from './types';
 
 export const LANGUAGES: Language[] = [
     { code: 'auto', name: 'languages.autoDetect' },
-    { code: 'en', name: 'languages.english', asrCode: 'en' },
+    { code: 'en-US', name: 'languages.english', asrCode: 'en' },
     { code: 'zh-TW', name: 'languages.chineseTraditional', asrCode: 'zh' },
     { code: 'zh-HK', name: 'languages.chineseTraditionalHK', asrCode: 'zh' },
     { code: 'zh-Hans', name: 'languages.chineseSimplified', asrCode: 'zh' },
-    { code: 'es', name: 'languages.spanish', asrCode: 'es' },
-    { code: 'ja', name: 'languages.japanese', asrCode: 'ja' },
-    { code: 'fr', name: 'languages.french', asrCode: 'fr' },
-    { code: 'de', name: 'languages.german', asrCode: 'de' },
-    { code: 'ko', name: 'languages.korean', asrCode: 'ko' },
-    { code: 'ru', name: 'languages.russian', asrCode: 'ru' },
-    { code: 'it', name: 'languages.italian', asrCode: 'it'  },
+    { code: 'es-ES', name: 'languages.spanish', asrCode: 'es' },
+    { code: 'ja-jp', name: 'languages.japanese', asrCode: 'ja' },
+    { code: 'fr-FR', name: 'languages.french', asrCode: 'fr' },
+    { code: 'de-DE', name: 'languages.german', asrCode: 'de' },
+    { code: 'ko-KR', name: 'languages.korean', asrCode: 'ko' },
+    { code: 'ru-RU', name: 'languages.russian', asrCode: 'ru' },
+    { code: 'it-IT', name: 'languages.italian', asrCode: 'it'  },
 ];
 
 export const OFFLINE_MODELS = [
@@ -35,11 +35,6 @@ export const OFFLINE_MODELS = [
         name: 'Gemma-3n-E4B (4.28 GB)', 
         value: 'gemma-3n-E4B-it-int4-Web.litertlm', 
         url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm'
-    },
-	{ 
-        name: 'Gemma-3-4B (2.4 GB)', 
-        value: 'gemma3-4b-it-int4-web.task', 
-        url: 'https://huggingface.co/willopcbeta/Gemma-3n-Web/resolve/main/gemma3-4b-it-int4-web.task'
     },
 	{ 
         name: 'TranslateGemma-4B (3.62 GB)', 
