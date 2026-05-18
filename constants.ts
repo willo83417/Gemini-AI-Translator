@@ -7,7 +7,7 @@ export const LANGUAGES: Language[] = [
     { code: 'zh-HK', name: 'languages.chineseTraditionalHK', asrCode: 'zh' },
     { code: 'zh-Hans', name: 'languages.chineseSimplified', asrCode: 'zh' },
     { code: 'es-ES', name: 'languages.spanish', asrCode: 'es' },
-    { code: 'ja-jp', name: 'languages.japanese', asrCode: 'ja' },
+    { code: 'ja-JP', name: 'languages.japanese', asrCode: 'ja' },
     { code: 'fr-FR', name: 'languages.french', asrCode: 'fr' },
     { code: 'de-DE', name: 'languages.german', asrCode: 'de' },
     { code: 'ko-KR', name: 'languages.korean', asrCode: 'ko' },

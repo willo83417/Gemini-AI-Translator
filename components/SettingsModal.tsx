@@ -233,7 +233,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     
     useEffect(() => {
         if (isOpen && voices.length > 0 && targetLang) {
-            const langVoices = voices.filter(v => v.lang.startsWith(targetLang.code));
+            let langVoices = voices.filter(v => 
+                v.lang.toLowerCase() === targetLang.code.toLowerCase() || 
+                v.lang.replace('_', '-').toLowerCase() === targetLang.code.toLowerCase()
+            );
+            if (langVoices.length === 0) {
+                const baseLangCode = targetLang.code.split('-')[0].toLowerCase();
+                langVoices = voices.filter(v => 
+                    v.lang.toLowerCase().startsWith(baseLangCode) || 
+                    v.lang.replace('_', '-').toLowerCase().startsWith(baseLangCode)
+                );
+            }
             setFilteredVoices(langVoices);
             if (offlineTtsVoiceURI && !langVoices.some(v => v.voiceURI === offlineTtsVoiceURI)) {
                 setOfflineTtsVoiceURI(langVoices[0]?.voiceURI || '');

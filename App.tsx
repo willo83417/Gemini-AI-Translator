@@ -1093,7 +1093,18 @@ const App: React.FC = () => {
             utterance.rate = offlineTtsRate;
             utterance.pitch = offlineTtsPitch;
         } else {
-            const langVoices = voices.filter(v => v.lang.startsWith(targetLang.code));
+            let langVoices = voices.filter(v => 
+                v.lang.toLowerCase() === targetLang.code.toLowerCase() || 
+                v.lang.replace('_', '-').toLowerCase() === targetLang.code.toLowerCase()
+            );
+            if (langVoices.length === 0) {
+                const baseLangCode = targetLang.code.split('-')[0].toLowerCase();
+                langVoices = voices.filter(v => 
+                    v.lang.toLowerCase().startsWith(baseLangCode) ||
+                    v.lang.replace('_', '-').toLowerCase().startsWith(baseLangCode)
+                );
+            }
+
             if (langVoices.length > 0) {
                 const femaleVoice = langVoices.find(v => /female|women|girl|mei-jia|zira|ayumi|kyoko/i.test(v.name));
                 const maleVoice = langVoices.find(v => /male|men|boy|liang|ichiro/i.test(v.name));

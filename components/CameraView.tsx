@@ -102,7 +102,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
         setError(null);
         
         try {
-            const imageDataUrl = webcamRef.current.getScreenshot({ width: 1024, height: 768 });
+            const imageDataUrl = webcamRef.current.getScreenshot({ width: 1080, height: 1920 });
             if (imageDataUrl) {
                 setPreviewImage(imageDataUrl);
             } else {
@@ -128,7 +128,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
                     const img = new Image();
                     img.onload = () => {
                         let { width, height } = img;
-                        const maxDimension = 1024;
+                        const maxDimension = 1080;
                         
                         if (width > maxDimension || height > maxDimension) {
                             if (width > height) {
@@ -175,12 +175,12 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
     }, [onImageCaptured]);
 
     const handleConfirm = useCallback(() => {
-        console.log('[CameraView] handleConfirm clicked, previewImage present:', !!previewImage);
+        //console.log('[CameraView] handleConfirm clicked, previewImage present:', !!previewImage);
         if (previewImage) {
             try {
                 // Give React a tick to unmount/update UI before processing
                 setTimeout(() => {
-                    console.log('[CameraView] timeout fired, calling onImageCapturedRef.current');
+                    //console.log('[CameraView] timeout fired, calling onImageCapturedRef.current');
                     onImageCapturedRef.current(previewImage);
                 }, 50);
             } catch (err) {
@@ -195,8 +195,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
 
     const videoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1024 },
-        height: { ideal: 768 }
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
     };
 
     return (
