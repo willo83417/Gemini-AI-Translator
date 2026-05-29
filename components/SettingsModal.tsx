@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { XIcon, TrashIcon } from './icons';
 import { DownloadProgress } from '../services/downloadManager';
-import { OFFLINE_MODELS, ASR_MODELS, OCR_MODELS } from '../constants';
+import { OFFLINE_MODELS, OFFLINE_MODELS_TS, ASR_MODELS, OCR_MODELS } from '../constants';
 import type { Language, OcrEngineStatus, OcrModelConfig } from '../types';
 
 interface SettingsModalProps {
@@ -265,7 +265,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const handleClear = () => {
         setApiKey('');
-        setModelName('gemini-3-flash-preview');
+        setModelName('gemini-3.1-flash-lite');
         setOnlineProvider('gemini');
         setOpenaiApiUrl('');
         setHuggingFaceApiKey('');
@@ -276,10 +276,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setOfflineTtsVoiceURI('');
         setOfflineTtsRate(1);
         setOfflineTtsPitch(1);
-        setOfflineMaxTokens(4096);
+        setOfflineMaxTokens(2048);
         setOfflineTopK(40);
         setOfflineTemperature(0.3);
-        setOfflineRandomSeed(10);
+        setOfflineRandomSeed(1);
         setOfflineSupportAudio(false);
         setOfflineAudioRealtime(false);
         setOfflineMaxNumImages(0);
@@ -297,7 +297,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
         onClearSettings();
-        onSave('', 'gemini-3-flash-preview', '', '', ASR_MODELS[0].id, false, false, false, true, 'gemini', '', false, '', 1, 1, false, 4096, 40, 0.3, 10, false, false, 0, false, 0, 'ch_v5', false);
+        onSave('', 'gemini-3.1-flash-lite', '', '', ASR_MODELS[0].id, false, false, false, true, 'gemini', '', false, '', 1, 1, false, 2048, 40, 0.3, 1, false, false, 0, false, 0, 'ch_v5', false);
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -356,7 +356,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
     
-    const renderDownloadControls = (model: { name: string, value: string, url: string }) => {
+    const renderDownloadControls = (model: { name: string, value: string, url?: string }) => {
         const progress = downloadProgress[model.value] || { status: 'not_started', percent: 0, downloaded: 0, total: 0 };
         const isInitializingThisModel = isOfflineModelInitializing && offlineModelName === model.value;
 
@@ -373,6 +373,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         const isProcessing = isInitializingThisModel || progress.status === 'consolidating';
         const statusKey = isProcessing ? progress.status : progress.status;
         const statusText = t(`common.status.${statusKey}`);
+        const isTSModel = !model.url;
 
         return (
              <div className="flex flex-col space-y-2 p-3 border border-gray-200 rounded-lg bg-gray-50">
@@ -385,19 +386,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={model.value}
                             checked={offlineModelName === model.value}
                             onChange={handleDownloadedModelSelect}
-                            disabled={progress.status !== 'completed' || isProcessing}
+                            disabled={!isTSModel && (progress.status !== 'completed' || isProcessing)}
                             className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 disabled:cursor-not-allowed"
                         />
                         <label htmlFor={`model-${model.value}`} className="ml-2 text-sm font-medium text-gray-800">
-                            {model.name}
+                            {model.name} {isTSModel && <span className="text-xs text-blue-500">(Auto-downloads)</span>}
                         </label>
                     </div>
                      <div className="flex items-center space-x-2">
-                         {progress.status === 'not_started' && <ActionButton onClick={() => onStartDownload(model.value, model.url)} text={t('settings.download')} /*disabled={!huggingFaceApiKey}*/ />}
-                         {progress.status === 'downloading' && <ActionButton onClick={() => onPauseDownload(model.value)} text={t('settings.pause')} className="bg-yellow-500 hover:bg-yellow-600" />}
-                         {progress.status === 'paused' && <ActionButton onClick={() => onResumeDownload(model.value, model.url)} text={t('settings.resume')} /*disabled={!huggingFaceApiKey}*/ />}
-                         {progress.status === 'error' && <ActionButton onClick={() => onResumeDownload(model.value, model.url)} text={t('settings.retry')} /*disabled={!huggingFaceApiKey}*/ />}
-                         {(progress.status !== 'not_started' && progress.status !== 'downloading' && progress.status !== 'consolidating') && (
+                         {!isTSModel && progress.status === 'not_started' && <ActionButton onClick={() => onStartDownload(model.value, model.url!)} text={t('settings.download')} />}
+                         {!isTSModel && progress.status === 'downloading' && <ActionButton onClick={() => onPauseDownload(model.value)} text={t('settings.pause')} className="bg-yellow-500 hover:bg-yellow-600" />}
+                         {!isTSModel && progress.status === 'paused' && <ActionButton onClick={() => onResumeDownload(model.value, model.url!)} text={t('settings.resume')} />}
+                         {!isTSModel && progress.status === 'error' && <ActionButton onClick={() => onResumeDownload(model.value, model.url!)} text={t('settings.retry')} />}
+                         {!isTSModel && (progress.status !== 'not_started' && progress.status !== 'downloading' && progress.status !== 'consolidating') && (
                             <button onClick={() => onDeleteModel(model.value)} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full" aria-label={t('settings.deleteModelAriaLabel', { modelName: model.name })}>
                                 <TrashIcon className="w-4 h-4" />
                             </button>
@@ -567,11 +568,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <div className="space-y-6 pt-2">
                                     <div className="space-y-3">
                                         <label className="block text-sm font-medium text-gray-700">{t('settings.manageModelsLabel')}</label>
-                                        {OFFLINE_MODELS.filter(m => m.value).map(model => (
-                                            <div key={model.value}>
-                                                {renderDownloadControls(model)}
+                                        <div className="space-y-4">
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">MediaPipe Models</h4>
+                                                <div className="space-y-2">
+                                                    {OFFLINE_MODELS.filter(m => m.value).map(model => (
+                                                        <div key={model.value}>
+                                                            {renderDownloadControls(model as any)}
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        ))}
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Transformers.js Models</h4>
+                                                <div className="space-y-2">
+                                                    {OFFLINE_MODELS_TS.map(model => (
+                                                        <div key={model.value}>
+                                                            {renderDownloadControls(model)}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div className="space-y-4 pt-2">
                                         <ToggleSwitch 

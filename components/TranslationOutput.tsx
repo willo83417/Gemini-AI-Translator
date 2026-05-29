@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Language } from '../types';
-import { LANGUAGES, OFFLINE_MODELS } from '../constants';
+import { LANGUAGES, OFFLINE_MODELS, OFFLINE_MODELS_TS } from '../constants';
 import LanguageSelector from './LanguageSelector';
 import { FemaleVoiceIcon, MaleVoiceIcon, CopyIcon, HistoryIcon, MaximizeIcon, FlipScreenIcon, XIcon, SpeakerIcon, MicrophoneIcon } from './icons';
 
@@ -69,7 +69,7 @@ const TranslationOutput: React.FC<TranslationOutputProps> = ({
             return t('translationOutput.modeOnline', { provider: providerName });
         }
         
-        const model = OFFLINE_MODELS.find(m => m.value === offlineModelName);
+        const model = [...OFFLINE_MODELS, ...OFFLINE_MODELS_TS].find(m => m.value === offlineModelName);
         const modelDisplayName = model ? model.name.split(' ')[0] : '';
 
         if (isOfflineModelInitializing) {

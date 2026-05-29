@@ -15,7 +15,7 @@ import { useWebSpeech } from './hooks/useWebSpeech';
 import { usePaddleOcr } from './hooks/usePaddleOcr';
 import { deleteOcrModelCache } from './utils/db';
 import type { Language, TranslationHistoryItem, CustomOfflineModel, EsearchOCROutput, EsearchOCRItem } from './types';
-import { LANGUAGES, OFFLINE_MODELS, ASR_MODELS, OCR_MODELS } from './constants';
+import { LANGUAGES, OFFLINE_MODELS, OFFLINE_MODELS_TS, ASR_MODELS, OCR_MODELS } from './constants';
 
 interface SpeechRecognition {
     continuous: boolean;
@@ -247,7 +247,7 @@ const App: React.FC = () => {
     
     // Shared settings
     const [apiKey, setApiKey] = useState('');
-    const [modelName, setModelName] = useState('gemini-3-flash-preview');
+    const [modelName, setModelName] = useState('gemini-3.1-flash-lite');
 
     // Online provider settings
     const [onlineProvider, setOnlineProvider] = useState('gemini');
@@ -276,10 +276,10 @@ const App: React.FC = () => {
     const [isOfflineModelInitialized, setIsOfflineModelInitialized] = useState(false);
 
     // Offline Model Parameters
-    const [offlineMaxTokens, setOfflineMaxTokens] = useState(4096);
+    const [offlineMaxTokens, setOfflineMaxTokens] = useState(2048);
     const [offlineTopK, setOfflineTopK] = useState(40);
     const [offlineTemperature, setOfflineTemperature] = useState(0.3);
-    const [offlineRandomSeed, setOfflineRandomSeed] = useState(10);
+    const [offlineRandomSeed, setOfflineRandomSeed] = useState(1);
     const [offlineSupportAudio, setOfflineSupportAudio] = useState(false);
     const [offlineAudioRealtime, setOfflineAudioRealtime] = useState(false);
     const [offlineMaxNumImages, setOfflineMaxNumImages] = useState(0);
@@ -384,7 +384,8 @@ const App: React.FC = () => {
         };
     }, []);
 
-    const isModelDownloaded = isOfflineModeEnabled && !!offlineModelName && downloadProgress[offlineModelName]?.status === 'completed';
+    const isTSModelSelected = OFFLINE_MODELS_TS.some(m => m.value === offlineModelName);
+    const isModelDownloaded = isOfflineModeEnabled && !!offlineModelName && (isTSModelSelected || downloadProgress[offlineModelName]?.status === 'completed');
     const isOfflineModelReady = isModelDownloaded && isOfflineModelInitialized;
 
     const performTranslate = useCallback(async (textToTranslate: string) => {
@@ -560,11 +561,45 @@ const App: React.FC = () => {
             switch(type) {
                 case 'init_done':
                     setIsOfflineModelInitialized(true);
+                    if (OFFLINE_MODELS_TS.some(m => m.value === payload.modelIdentifier)) {
+                        setDownloadProgress(prev => ({
+                            ...prev,
+                            [payload.modelIdentifier]: {
+                                status: 'completed',
+                                downloaded: 1,
+                                total: 1,
+                                percent: 100
+                            }
+                        }));
+                    }
                     showNotification(t('notifications.offlineModelInitSuccess', { modelIdentifier: payload.modelIdentifier }), 'success');
                     setIsOfflineModelInitializing(false);
                     break;
+                case 'download_progress':
+                    // Transformers.js download progress
+                    setDownloadProgress(prev => ({
+                        ...prev,
+                        [payload.modelSource]: {
+                            status: payload.status === 'done' ? 'completed' : 'downloading',
+                            downloaded: payload.loaded || 0,
+                            total: payload.total || 0,
+                            percent: payload.total ? Math.round((payload.loaded / payload.total) * 100) : 0
+                        }
+                    }));
+                    break;
                 case 'init_error':
                     setIsOfflineModelInitialized(false);
+                    if (OFFLINE_MODELS_TS.some(m => m.value === payload.modelSource || m.value === offlineModelName)) {
+                         setDownloadProgress(prev => ({
+                             ...prev,
+                             [payload.modelSource || offlineModelName]: {
+                                 status: 'error',
+                                 downloaded: 0,
+                                 total: 0,
+                                 percent: 0
+                             }
+                         }));
+                    }
                     showNotification(payload.error || t('notifications.offlineModelInitFailed'), 'error');
                     console.error('Offline model init failed via worker:', payload.error);
                     setIsOfflineModelInitializing(false);
@@ -947,15 +982,25 @@ const App: React.FC = () => {
         }
     }, [isModelDownloaded, offlineModelName, isOfflineModeEnabled, isOfflineModelInitialized, isOfflineModelInitializing]);
 
-    // Unload LLM when disabled
+    // Unload LLM when disabled or model changed
+    const previousOfflineModelRef = useRef(offlineModelName);
+    
     useEffect(() => {
         if (!isOfflineModeEnabled && (isOfflineModelInitialized || isOfflineModelInitializing)) {
             if (workerRef.current) {
-                console.log('Requesting offline model unload.');
+                console.log('Requesting offline model unload. (Offline mode disabled)');
                 workerRef.current.postMessage({ type: 'unload' });
             }
+        } else if (isOfflineModeEnabled && offlineModelName !== previousOfflineModelRef.current) {
+             console.log(`[App] Model changed from ${previousOfflineModelRef.current} to ${offlineModelName} - Unloading previous`);
+             if (workerRef.current && (isOfflineModelInitialized || isOfflineModelInitializing)) {
+                 workerRef.current.postMessage({ type: 'unload' });
+             }
+             setIsOfflineModelInitialized(false);
+             setIsOfflineModelInitializing(false);
         }
-    }, [isOfflineModeEnabled, isOfflineModelInitialized, isOfflineModelInitializing]);
+        previousOfflineModelRef.current = offlineModelName;
+    }, [isOfflineModeEnabled, offlineModelName, isOfflineModelInitialized, isOfflineModelInitializing]);
 
     // Queue ASR initialization
     useEffect(() => {
@@ -985,29 +1030,45 @@ const App: React.FC = () => {
         }
 
         const nextTask = loadingQueue[0];
-        //console.log('[Orchestrator] Starting task:', nextTask, 'Status:', { llm: isOfflineModelInitializing, asr: isAsrInitializing, ocr: ocrEngineStatus });
+        console.log('[Orchestrator] Starting task:', nextTask, 'Status:', { llm: isOfflineModelInitializing, asr: isAsrInitializing, ocr: ocrEngineStatus });
         
         // Dequeue the task
         setLoadingQueue(q => q.slice(1));
 
-        //console.log(`[Orchestrator] Starting next task: ${nextTask}`);
+        console.log(`[Orchestrator] Starting next task: ${nextTask}`);
 
         if (nextTask === 'llm') {
             const modelToLoad = offlineModelName;
+            console.log(`[Orchestrator] Sending init for LLM. Engine flag check!`, { modelToLoad });
             setIsOfflineModelInitializing(true);
             setIsOfflineModelInitialized(false);
-            downloadManager.getModelAsBlob(modelToLoad).then(modelBlob => {
-                if (!modelBlob) throw new Error(`Model blob for ${modelToLoad} not found.`);
-                const options = {
-                    maxTokens: offlineMaxTokens, topK: offlineTopK, temperature: offlineTemperature,
-                    randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, audioRealtime: offlineAudioRealtime, maxNumImages: offlineMaxNumImages,
-                };
-                getOrCreateWorker().postMessage({ type: 'init', payload: { modelBlob, modelSource: modelToLoad, options } });
-            }).catch(err => {
-                const message = err instanceof Error ? err.message : t('notifications.offlineModelInitFailed');
-                showNotification(message, 'error');
-                setIsOfflineModelInitializing(false);
-            });
+            
+            const isTSModel = OFFLINE_MODELS_TS.some(m => m.value === modelToLoad);
+            console.log(`[Orchestrator] isTSModel?`, isTSModel);
+            
+            if (isTSModel) {
+                 const model = OFFLINE_MODELS_TS.find(m => m.value === modelToLoad);
+                 const options = {
+                     maxTokens: offlineMaxTokens, topK: offlineTopK, temperature: offlineTemperature,
+                     randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, audioRealtime: offlineAudioRealtime, maxNumImages: offlineMaxNumImages,
+                     dtype: model?.dtype || 'q4f16'
+                 };
+                 console.log(`[Orchestrator] Sending transformers init!`);
+                 getOrCreateWorker().postMessage({ type: 'init', payload: { engine: 'transformers', modelSource: modelToLoad, options } });
+            } else {
+                 downloadManager.getModelAsBlob(modelToLoad).then(modelBlob => {
+                    if (!modelBlob) throw new Error(`Model blob for ${modelToLoad} not found.`);
+                    const options = {
+                        maxTokens: offlineMaxTokens, topK: offlineTopK, temperature: offlineTemperature,
+                        randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, audioRealtime: offlineAudioRealtime, maxNumImages: offlineMaxNumImages,
+                    };
+                    getOrCreateWorker().postMessage({ type: 'init', payload: { engine: 'mediapipe', modelBlob, modelSource: modelToLoad, options } });
+                 }).catch(err => {
+                    const message = err instanceof Error ? err.message : t('notifications.offlineModelInitFailed');
+                    showNotification(message, 'error');
+                    setIsOfflineModelInitializing(false);
+                 });
+            }
         } else if (nextTask === 'asr') {
             const model = ASR_MODELS.find(m => m.id === asrModelId);
             if (model && asrWorkerRef.current) {

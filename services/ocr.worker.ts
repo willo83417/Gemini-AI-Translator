@@ -54,7 +54,7 @@ self.onmessage = async (e: MessageEvent<any>) => {
                 // Use WebGPU if available
                 ortInstance.env.wasm.numThreads = 0;
                 ortInstance.env.wasm.simd = true;
-                ortInstance.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
+                ortInstance.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/';
                 
                 // Set OCR environment for Worker (OffscreenCanvas)
                 (ocr as any).setOCREnv({

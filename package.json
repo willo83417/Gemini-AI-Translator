@@ -1,7 +1,7 @@
 {
   "name": "gemini-ai-translator-offline",
   "private": false,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,13 +11,13 @@
   },
   "dependencies": {
     "@google/genai": "^1.48.0",
-    "@mediapipe/tasks-genai": "0.10.36-rc.20260507",
+    "@mediapipe/tasks-genai": "0.10.36-rc.20260519",
     "@huggingface/transformers": "^4.2.0",
     "gh-pages": "^6.3.0",
     "i18next": "^23.12.2",
     "i18next-browser-languagedetector": "^8.0.0",
-	"esearch-ocr": "^8.5.0",
-    "onnxruntime-web": "^1.24.3",
+	  "esearch-ocr": "^8.5.0",
+    "onnxruntime-web": "^1.26.0",
     "idb": "^8.0.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

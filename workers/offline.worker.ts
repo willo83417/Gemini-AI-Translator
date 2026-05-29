@@ -110,7 +110,7 @@ self.onmessage = async (event: MessageEvent) => {
         case 'init':
             if (!inferenceWorker) {
                 console.log('Controller: Creating inference worker...');
-                inferenceWorker = new Worker(new URL('./worker.ts?url', import.meta.url), { type: 'classic' });
+                inferenceWorker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
                 setupInferenceWorkerListeners();
             }
             forwardToInferenceWorker(event);

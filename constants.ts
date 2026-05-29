@@ -43,6 +43,19 @@ export const OFFLINE_MODELS = [
     },
 ];
 
+export const OFFLINE_MODELS_TS = [
+    { 
+        name: 'Gemma-4-E2B-it (3.8 GB)', 
+        value: 'onnx-community/gemma-4-E2B-it-ONNX', 
+        dtype: 'q4f16'
+    },
+    { 
+        name: 'Gemma-4-E4B-it (4.5 GB)', 
+        value: 'onnx-community/gemma-4-E4B-it-ONNX', 
+        dtype: 'q4f16'
+    },
+];
+
 export const ASR_MODELS: AsrModel[] = [
     {
         id: 'willopcbeta/lite-whisper-large-v3-turbo-ONNX',
