@@ -1713,7 +1713,16 @@ const App: React.FC = () => {
                     };
                 });
     
-                const recognitionData = await recognize(image);
+                const recognitionData = await recognize(image, (chunk: string) => {
+                    setInputText(prev => {
+                        const trimmedChunk = chunk.trim();
+                        if (!trimmedChunk) return prev;
+                        if (prev === t('notifications.processingImage') || prev === '') {
+                            return trimmedChunk + '\n';
+                        }
+                        return prev + trimmedChunk + '\n';
+                    });
+                });
                 if (!recognitionData) {
                     throw new Error('OCR recognition returned no data.');
                 }

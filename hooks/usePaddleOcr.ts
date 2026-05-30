@@ -9,6 +9,7 @@ export const usePaddleOcr = () => {
     // Use refs for callbacks to avoid stale closures in worker event listener
     const pendingResolveRef = useRef<((value: any) => void) | null>(null);
     const pendingRejectRef = useRef<((reason?: any) => void) | null>(null);
+    const pendingProgressRef = useRef<((chunk: string) => void) | null>(null);
 
     const cleanup = useCallback(() => {
         if (workerRef.current) {
@@ -41,6 +42,12 @@ export const usePaddleOcr = () => {
                         pendingRejectRef.current(new Error(payload));
                         pendingRejectRef.current = null;
                         pendingResolveRef.current = null;
+                        pendingProgressRef.current = null;
+                    }
+                    break;
+                case 'recognize_chunk':
+                    if (pendingProgressRef.current) {
+                        pendingProgressRef.current(payload as string);
                     }
                     break;
                 case 'result':
@@ -48,6 +55,7 @@ export const usePaddleOcr = () => {
                         pendingResolveRef.current(payload);
                         pendingResolveRef.current = null;
                         pendingRejectRef.current = null;
+                        pendingProgressRef.current = null;
                     }
                     break;
             }
@@ -61,6 +69,7 @@ export const usePaddleOcr = () => {
                 pendingRejectRef.current(new Error('Worker crashed'));
                 pendingRejectRef.current = null;
                 pendingResolveRef.current = null;
+                pendingProgressRef.current = null;
             }
         };
 
@@ -84,7 +93,10 @@ export const usePaddleOcr = () => {
         worker.postMessage({ type: 'load', payload: modelConfig });
     }, [initWorker]);
 
-    const recognize = useCallback(async (image: HTMLImageElement | HTMLCanvasElement): Promise<{ result: EsearchOCROutput, time: number } | null> => {
+    const recognize = useCallback(async (
+        image: HTMLImageElement | HTMLCanvasElement,
+        onProgress?: (chunk: string) => void
+    ): Promise<{ result: EsearchOCROutput, time: number } | null> => {
         //console.log('[usePaddleOcr] recognize called, status:', status);
         if (status !== 'ready' || !workerRef.current) {
             //console.warn('[usePaddleOcr] recognize called but not ready. Status:', status);
@@ -99,12 +111,18 @@ export const usePaddleOcr = () => {
             return new Promise<{ result: EsearchOCROutput, time: number } | null>((resolve, reject) => {
                 pendingResolveRef.current = resolve;
                 pendingRejectRef.current = reject;
+                if (onProgress) {
+                    pendingProgressRef.current = onProgress;
+                } else {
+                    pendingProgressRef.current = null;
+                }
                 
                 const timeoutId = setTimeout(() => {
                     if (pendingResolveRef.current === resolve) {
                         //console.error('[usePaddleOcr] Recognition timed out after 40s');
                         pendingResolveRef.current = null;
                         pendingRejectRef.current = null;
+                        pendingProgressRef.current = null;
                         reject(new Error('OCR recognition timed out'));
                     }
                 }, 40000);

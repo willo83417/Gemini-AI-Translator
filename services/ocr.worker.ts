@@ -67,7 +67,13 @@ self.onmessage = async (e: MessageEvent<any>) => {
                     rec: {
                         input: new Uint8Array(recBuffer!),
                         decodeDic: dictText!,
-                        optimize: { space: false }
+                        optimize: { space: false },
+                        on: (index: number, result: any, total: number) => {
+                            const text = result.map((c: any) => c[0]?.t || '').join('');
+                            if (text.trim()) {
+                                post('recognize_chunk', text);
+                            }
+                        }
                     },
                     ort: ortInstance,
                     ortOption: {
