@@ -358,7 +358,6 @@ const App: React.FC = () => {
         if (workerRef.current) {
             return workerRef.current;
         }
-        //console.log("Creating offline worker...");
         const worker = new Worker(new URL('./workers/offline.worker.ts', import.meta.url), { type: 'module' });
         workerRef.current = worker;
     
@@ -379,7 +378,6 @@ const App: React.FC = () => {
             if (workerRef.current) {
                 workerRef.current.terminate();
                 workerRef.current = null;
-                console.log("Offline worker terminated on component unmount.");
             }
         };
     }, []);
@@ -455,7 +453,6 @@ const App: React.FC = () => {
     
         } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') {
-                console.log("Translation cancelled by user.");
                 setIsLoading(false);
                 return;
             }
@@ -540,7 +537,6 @@ const App: React.FC = () => {
             }
         } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') {
-                console.log("Reverse translation cancelled.");
                 setIsLoading(false);
                 return;
             }
@@ -631,6 +627,17 @@ const App: React.FC = () => {
                     break;
                 case 'translation_cancelled':
                     setIsLoading(false);
+                    break;
+                case 'extract_text_start':
+                    // Do nothing, UI is already showing processing state
+                    break;
+                case 'extract_text_chunk':
+                    setInputText(prev => {
+                        if (prev === t('notifications.processingImage') || prev === '') {
+                            return payload.chunk.trimStart();
+                        }
+                        return prev + payload.chunk;
+                    });
                     break;
                 case 'extract_text_done':
                     setInputText(payload.text);
@@ -808,7 +815,6 @@ const App: React.FC = () => {
         });
         newWorker.addEventListener('message', onAsrWorkerMessage);
         asrWorkerRef.current = newWorker;
-        console.log('ASR Worker initialized.');
     }, [onAsrWorkerMessage]);
 
 
@@ -821,7 +827,6 @@ const App: React.FC = () => {
         // Cleanup function for when the component unmounts or offline ASR is disabled
         return () => {
             if (asrWorkerRef.current) {
-                console.log('Cleaning up ASR worker.');
                 asrWorkerRef.current.terminate();
                 asrWorkerRef.current = null;
                 setIsAsrInitialized(false);
@@ -992,7 +997,7 @@ const App: React.FC = () => {
                 workerRef.current.postMessage({ type: 'unload' });
             }
         } else if (isOfflineModeEnabled && offlineModelName !== previousOfflineModelRef.current) {
-             console.log(`[App] Model changed from ${previousOfflineModelRef.current} to ${offlineModelName} - Unloading previous`);
+             //console.log(`[App] Model changed from ${previousOfflineModelRef.current} to ${offlineModelName} - Unloading previous`);
              if (workerRef.current && (isOfflineModelInitialized || isOfflineModelInitializing)) {
                  workerRef.current.postMessage({ type: 'unload' });
              }
@@ -1029,22 +1034,18 @@ const App: React.FC = () => {
             return; // Wait until the current task is done or if the queue is empty
         }
 
-        const nextTask = loadingQueue[0];
-        console.log('[Orchestrator] Starting task:', nextTask, 'Status:', { llm: isOfflineModelInitializing, asr: isAsrInitializing, ocr: ocrEngineStatus });
-        
+        const nextTask = loadingQueue[0];        
         // Dequeue the task
         setLoadingQueue(q => q.slice(1));
 
-        console.log(`[Orchestrator] Starting next task: ${nextTask}`);
-
         if (nextTask === 'llm') {
             const modelToLoad = offlineModelName;
-            console.log(`[Orchestrator] Sending init for LLM. Engine flag check!`, { modelToLoad });
+            //console.log(`[Orchestrator] Sending init for LLM. Engine flag check!`, { modelToLoad });
             setIsOfflineModelInitializing(true);
             setIsOfflineModelInitialized(false);
             
             const isTSModel = OFFLINE_MODELS_TS.some(m => m.value === modelToLoad);
-            console.log(`[Orchestrator] isTSModel?`, isTSModel);
+            //console.log(`[Orchestrator] isTSModel?`, isTSModel);
             
             if (isTSModel) {
                  const model = OFFLINE_MODELS_TS.find(m => m.value === modelToLoad);
@@ -1053,7 +1054,6 @@ const App: React.FC = () => {
                      randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, audioRealtime: offlineAudioRealtime, maxNumImages: offlineMaxNumImages,
                      dtype: model?.dtype || 'q4f16'
                  };
-                 console.log(`[Orchestrator] Sending transformers init!`);
                  getOrCreateWorker().postMessage({ type: 'init', payload: { engine: 'transformers', modelSource: modelToLoad, options } });
             } else {
                  downloadManager.getModelAsBlob(modelToLoad).then(modelBlob => {

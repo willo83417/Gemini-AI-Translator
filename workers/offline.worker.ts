@@ -4,6 +4,7 @@
 // and handling complex logic like two-step translations.
 
 let inferenceWorker: Worker | null = null;
+let currentEngine: 'mediapipe' | 'transformers' = 'mediapipe';
 let twoStepState: {
     resolve: (value: unknown) => void;
     reject: (reason?: any) => void;
@@ -108,9 +109,19 @@ self.onmessage = async (event: MessageEvent) => {
 
     switch (type) {
         case 'init':
+            const engine = payload.engine || 'mediapipe';
+            if (inferenceWorker && currentEngine !== engine) {
+                 inferenceWorker.terminate();
+                 inferenceWorker = null;
+            }
             if (!inferenceWorker) {
-                console.log('Controller: Creating inference worker...');
-                inferenceWorker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+                console.log(`Controller: Creating inference worker for ${engine}...`);
+                if (engine === 'transformers') {
+                    inferenceWorker = new Worker(new URL('./transformers.worker.ts', import.meta.url), { type: 'module' });
+                } else {
+                    inferenceWorker = new Worker(new URL('./mediapipe.worker.ts?url', import.meta.url), { type: 'classic' });
+                }
+                currentEngine = engine;
                 setupInferenceWorkerListeners();
             }
             forwardToInferenceWorker(event);
