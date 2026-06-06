@@ -47,8 +47,8 @@ interface SettingsModalProps {
     currentIsOfflineModeEnabled: boolean;
     currentIsTwoStepJpCnEnabled: boolean;
     downloadProgress: Record<string, DownloadProgress>;
-    onStartDownload: (modelName: string, url: string) => void;
-    onResumeDownload: (modelName: string, url: string) => void;
+    onStartDownload: (modelName: string, url: string, isTSModel?: boolean, dtype?: string) => void;
+    onResumeDownload: (modelName: string, url: string, isTSModel?: boolean, dtype?: string) => void;
     onPauseDownload: (modelName: string) => void;
     onDeleteModel: (modelName: string) => void;
     isOfflineModelInitializing: boolean;
@@ -356,7 +356,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
     
-    const renderDownloadControls = (model: { name: string, value: string, url?: string }) => {
+    const renderDownloadControls = (model: { name: string, value: string, url?: string, dtype?: string }) => {
         const progress = downloadProgress[model.value] || { status: 'not_started', percent: 0, downloaded: 0, total: 0 };
         const isInitializingThisModel = isOfflineModelInitializing && offlineModelName === model.value;
 
@@ -386,19 +386,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             value={model.value}
                             checked={offlineModelName === model.value}
                             onChange={handleDownloadedModelSelect}
-                            disabled={!isTSModel && (progress.status !== 'completed' || isProcessing)}
+                            disabled={progress.status !== 'completed' || isProcessing}
                             className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 disabled:cursor-not-allowed"
                         />
                         <label htmlFor={`model-${model.value}`} className="ml-2 text-sm font-medium text-gray-800">
-                            {model.name} {isTSModel && <span className="text-xs text-blue-500">(Auto-downloads)</span>}
+                            {model.name} {isTSModel && <span className="text-xs text-blue-500"></span>}
                         </label>
                     </div>
                      <div className="flex items-center space-x-2">
-                         {!isTSModel && progress.status === 'not_started' && <ActionButton onClick={() => onStartDownload(model.value, model.url!)} text={t('settings.download')} />}
-                         {!isTSModel && progress.status === 'downloading' && <ActionButton onClick={() => onPauseDownload(model.value)} text={t('settings.pause')} className="bg-yellow-500 hover:bg-yellow-600" />}
-                         {!isTSModel && progress.status === 'paused' && <ActionButton onClick={() => onResumeDownload(model.value, model.url!)} text={t('settings.resume')} />}
-                         {!isTSModel && progress.status === 'error' && <ActionButton onClick={() => onResumeDownload(model.value, model.url!)} text={t('settings.retry')} />}
-                         {!isTSModel && (progress.status !== 'not_started' && progress.status !== 'downloading' && progress.status !== 'consolidating') && (
+                         {progress.status === 'not_started' && <ActionButton onClick={() => onStartDownload(model.value, model.url || '', isTSModel, model.dtype)} text={t('settings.download')} />}
+                         {progress.status === 'downloading' && <ActionButton onClick={() => onPauseDownload(model.value)} text={t('settings.pause')} className="bg-yellow-500 hover:bg-yellow-600" />}
+                         {progress.status === 'paused' && <ActionButton onClick={() => onResumeDownload(model.value, model.url || '', isTSModel, model.dtype)} text={t('settings.resume')} />}
+                         {progress.status === 'error' && <ActionButton onClick={() => onResumeDownload(model.value, model.url || '', isTSModel, model.dtype)} text={t('settings.retry')} />}
+                         {(progress.status !== 'not_started' && progress.status !== 'downloading' && progress.status !== 'consolidating') && (
                             <button onClick={() => onDeleteModel(model.value)} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full" aria-label={t('settings.deleteModelAriaLabel', { modelName: model.name })}>
                                 <TrashIcon className="w-4 h-4" />
                             </button>

@@ -47,12 +47,18 @@ export const OFFLINE_MODELS_TS = [
     { 
         name: 'Gemma-4-E2B-it (3.8 GB)', 
         value: 'onnx-community/gemma-4-E2B-it-ONNX', 
-        dtype: 'q4f16'
+        dtype: 'q4'
+		/*dtype: {
+			embed_tokens: "q2f16",
+			vision_encoder: "fp16",
+			decoder_model_merged: "q2f16",
+			audio_encoder: "q2f16"
+		},*/
     },
     { 
         name: 'Gemma-4-E4B-it (4.5 GB)', 
         value: 'onnx-community/gemma-4-E4B-it-ONNX', 
-        dtype: 'q4f16'
+        dtype: 'q4'
     },
 ];
 
@@ -61,8 +67,8 @@ export const ASR_MODELS: AsrModel[] = [
         id: 'willopcbeta/lite-whisper-large-v3-turbo-ONNX',
         name: 'lite-whisper-large-v3-turbo',
         quantization: {
-            encoder_model: 'q4f16',
-            decoder_model_merged: 'q4f16',
+            encoder_model: 'q4',
+            decoder_model_merged: 'q4',
         },
         size: '~590 MB'
     },
@@ -70,8 +76,8 @@ export const ASR_MODELS: AsrModel[] = [
         id: 'willopcbeta/unsloth-whisper-large-v3-turbo-ONNX',
         name: 'unsloth-whisper-large-v3-turbo',
         quantization: {
-            encoder_model: 'q4f16',
-            decoder_model_merged: 'q4f16',
+            encoder_model: 'q4',
+            decoder_model_merged: 'q4',
         },
         size: '~590 MB'
     },
@@ -79,7 +85,7 @@ export const ASR_MODELS: AsrModel[] = [
         id: 'willopcbeta/lite-whisper-small-fast-ONNX-v2',
         name: 'lite-whisper-small-fast',
         quantization: {
-            encoder_model: 'q4f16',
+            encoder_model: 'q4',
             decoder_model_merged: 'q4',
         },
         size: '~280 MB'
@@ -88,7 +94,7 @@ export const ASR_MODELS: AsrModel[] = [
         id: 'willopcbeta/unsloth-whisper-small-ONNX',
         name: 'unsloth-whisper-small',
         quantization: {
-            encoder_model: 'q4f16',
+            encoder_model: 'q4',
             decoder_model_merged: 'q4',
         },
         size: '~290 MB'

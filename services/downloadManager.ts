@@ -17,6 +17,7 @@ export interface DownloadProgress {
     error?: string;
 }
 
+
 class DownloadManager {
     private dbPromise: Promise<IDBPDatabase>;
     private controllers: Map<string, AbortController> = new Map();
@@ -54,6 +55,100 @@ class DownloadManager {
 
     private async getOpfsRoot(): Promise<FileSystemDirectoryHandle | null> {
         return this.opfsRootPromise;
+    }
+
+    async startTSModelDownload(modelName: string, dtype: string, hfApiKey: string, onProgress: (progress: DownloadProgress) => void): Promise<void> {
+        if (this.controllers.has(modelName)) return;
+
+        const controller = new AbortController();
+        this.controllers.set(modelName, controller);
+        
+        try {
+            onProgress({ downloaded: 0, total: 0, percent: 0, status: 'downloading' });
+            
+            const urls: string[] = [];
+            const rootRes = await fetch(`https://huggingface.co/api/models/${modelName}/tree/main`, { signal: controller.signal });
+            if (!rootRes.ok) throw new Error('Failed to fetch model tree');
+            const rootFiles = await rootRes.json();
+            for (const f of rootFiles) {
+                if (f.path.endsWith('.json')) urls.push(`https://huggingface.co/${modelName}/resolve/main/${f.path}`);
+            }
+
+            const onnxRes = await fetch(`https://huggingface.co/api/models/${modelName}/tree/main/onnx`, { signal: controller.signal });
+            if (!onnxRes.ok) throw new Error('Failed to fetch onnx tree');
+            const onnxFiles = await onnxRes.json();
+            for (const f of onnxFiles) {
+                if (f.path.includes(`_${dtype}.onnx`)) {
+                    urls.push(`https://huggingface.co/${modelName}/resolve/main/${f.path}`);
+                }
+            }
+
+            let grandTotal = 0;
+            for(const f of rootFiles) {
+                 if (f.path.endsWith('.json')) grandTotal += f.size || 0;
+            }
+            for(const f of onnxFiles) {
+                 if (f.path.includes(`_${dtype}.onnx`)) grandTotal += f.size || 0;
+            }
+            
+            let grandDownloaded = 0;
+            const cache = await caches.open('transformers-cache');
+
+            for (const url of urls) {
+                let fileSize = 0;
+                const headRes = await fetch(url, { method: 'HEAD', signal: controller.signal }).catch(()=>null);
+                if (headRes && headRes.ok) fileSize = parseInt(headRes.headers.get('content-length') || '0', 10);
+
+                const cachedRes = await cache.match(url);
+                if (cachedRes) {
+                    const cachedSize = parseInt(cachedRes.headers.get('content-length') || '0', 10);
+                    if (cachedSize === fileSize && fileSize > 0) {
+                        grandDownloaded += fileSize;
+                        onProgress({ downloaded: grandDownloaded, total: grandTotal, percent: (grandDownloaded/grandTotal)*100, status: 'downloading' });
+                        continue;
+                    }
+                }
+
+                const response = await fetch(url, { signal: controller.signal });
+                if (!response.ok || !response.body) throw new Error(`Failed to fetch ${url}`);
+
+                const reader = response.body.getReader();
+                const headers = new Headers(response.headers);
+
+                const stream = new ReadableStream({
+                    async start(ctrl) {
+                        while(true) {
+                            const { done, value } = await reader.read();
+                            if (done) {
+                                ctrl.close();
+                                break;
+                            }
+                            grandDownloaded += value.length;
+                            onProgress({ downloaded: grandDownloaded, total: grandTotal, percent: (grandDownloaded/grandTotal)*100, status: 'downloading' });
+                            ctrl.enqueue(value);
+                        }
+                    }
+                });
+
+                const streamResponse = new Response(stream, { headers });
+                await cache.put(url, streamResponse);
+            }
+            
+            const db = await this.getDb();
+            await db.put(META_STORE, { modelName, total: grandTotal, status: 'completed' });
+            onProgress({ downloaded: grandTotal, total: grandTotal, percent: 100, status: 'completed' });
+            console.log(`TS Model ${modelName} pre-download completed successfully using Cache API.`);
+            
+        } catch (error: any) {
+            console.error('Download error:', error);
+            if (error.name === 'AbortError') {
+                onProgress({ downloaded: 0, total: 0, percent: 0, status: 'paused' });
+            } else {
+                onProgress({ downloaded: 0, total: 0, percent: 0, status: 'error', error: error.message });
+            }
+        } finally {
+            this.controllers.delete(modelName);
+        }
     }
 
     async startDownload(modelName: string, url: string, hfApiKey: string, onProgress: (progress: DownloadProgress) => void): Promise<void> {
@@ -322,11 +417,44 @@ class DownloadManager {
     async deleteModel(modelName: string): Promise<void> {
         this.pauseDownload(modelName);
 
+        // Delete from Cache API (Transformers-cache)
+        try {
+            const cache = await caches.open('transformers-cache');
+            const keys = await cache.keys();
+            for (const key of keys) {
+                if (key.url.includes(modelName)) {
+                    await cache.delete(key);
+                    console.log(`[Cache API] Deleted cached file: ${key.url}`);
+                }
+            }
+        } catch (e) {
+            console.error(`Error deleting ${modelName} from Cache API:`, e);
+        }
+
         if (this.isOpfsSupported) {
             try {
                 const root = await this.getOpfsRoot();
                 if (root) {
-                    await root.removeEntry(modelName);
+                    try {
+                        await root.removeEntry(modelName);
+                    } catch (e) { /* ignore if not found */ }
+
+                    try {
+                        const cacheRoot = await root.getDirectoryHandle('transformers-cache', { create: false }).catch(() => null);
+                        if (cacheRoot) {
+                            const prefix = modelName.replace(/\//g, '_');
+                            const filesToDelete: string[] = [];
+                            for await (const name of (cacheRoot as any).keys()) {
+                                if (name.startsWith(prefix)) {
+                                    filesToDelete.push(name);
+                                }
+                            }
+                            for (const fileName of filesToDelete) {
+                                await cacheRoot.removeEntry(fileName);
+                                console.log(`[OPFS] Deleted cached file: ${fileName}`);
+                            }
+                        }
+                    } catch (e) { /* ignore */ }
                 }
             } catch (error) {
                 if (!(error instanceof DOMException && error.name === 'NotFoundError')) {

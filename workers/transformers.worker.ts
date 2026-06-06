@@ -6,7 +6,11 @@
 	import { AutoProcessor, Gemma4ForConditionalGeneration, TextStreamer, RawImage, read_audio, env, DynamicCache } from '@huggingface/transformers';
 
 	env.allowLocalModels = false;
+    env.useWasmCache = true;    
+	env.useCustomCache = false;
 	env.useBrowserCache = true;
+	env.backends.onnx.wasm.memoryLimit = 2048;
+	env.backends.onnx.wasm.proxy = true
 	
 	if (typeof (self as any).HTMLImageElement === 'undefined') {
 		(self as any).HTMLImageElement = class HTMLImageElement {};
@@ -140,7 +144,6 @@ const handleInit = async (payload: any) => {
     const { modelBlob, modelSource, options } = payload;
     currentModelSource = modelSource;
     
-    // We don't have a reliable `close()` for Transformers.js models yet but we let garbage collection handle it if reassigned
     tsModel = null;
     tsProcessor = null;
 
@@ -150,7 +153,7 @@ const handleInit = async (payload: any) => {
         }
 
         const { 
-            maxTokens = 2048, topK = 40, temperature = 0.3, dtype = 'q4f16'
+            maxTokens = 2048, topK = 40, temperature = 0.3, dtype = 'q4'
         } = options;
         
         const progressCb = (info: any) => {
@@ -161,6 +164,12 @@ const handleInit = async (payload: any) => {
             dtype: dtype,
             device: 'webgpu',
             progress_callback: progressCb,
+            	session_options: {
+				// ONNX Runtime configuration options go here
+				//graphOptimizationLevel: 'disabled',
+				/*freeDimensionOverrides: { batch_size: 1, max_seq_length: 256 },
+				enableCpuMemArena: false,
+				enableMemPattern: false,*/},
         });
         tsGenerateOptions = {
             max_new_tokens: maxTokens,
@@ -239,6 +248,7 @@ const performTranslation = async (text: string, sourceLang: string, targetLang: 
                         });
                     await past_key_values.dispose();
                     streamCallback("", true);
+					outputs.dispose();
                 } catch(err) {
                     reject(err);
                 }

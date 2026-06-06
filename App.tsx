@@ -1894,12 +1894,20 @@ const App: React.FC = () => {
         setDownloadProgress(prev => ({ ...prev, [modelName]: progress }));
     }, []);
 
-    const handleStartDownload = useCallback((modelName: string, url: string) => {
-        downloadManager.startDownload(modelName, url, huggingFaceApiKey, (p) => updateProgress(modelName, p));
+    const handleStartDownload = useCallback((modelName: string, url: string, isTSModel?: boolean, dtype?: string) => {
+        if (isTSModel && dtype) {
+            downloadManager.startTSModelDownload(modelName, dtype, huggingFaceApiKey, (p) => updateProgress(modelName, p));
+        } else {
+            downloadManager.startDownload(modelName, url, huggingFaceApiKey, (p) => updateProgress(modelName, p));
+        }
     }, [huggingFaceApiKey, updateProgress]);
 
-    const handleResumeDownload = useCallback((modelName: string, url: string) => {
-        downloadManager.resumeDownload(modelName, url, huggingFaceApiKey, (p) => updateProgress(modelName, p));
+    const handleResumeDownload = useCallback((modelName: string, url: string, isTSModel?: boolean, dtype?: string) => {
+        if (isTSModel && dtype) {
+             downloadManager.startTSModelDownload(modelName, dtype, huggingFaceApiKey, (p) => updateProgress(modelName, p));
+        } else {
+             downloadManager.resumeDownload(modelName, url, huggingFaceApiKey, (p) => updateProgress(modelName, p));
+        }
     }, [huggingFaceApiKey, updateProgress]);
     
     const handlePauseDownload = useCallback((modelName: string) => {
