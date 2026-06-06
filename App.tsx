@@ -1052,7 +1052,8 @@ const App: React.FC = () => {
                  const options = {
                      maxTokens: offlineMaxTokens, topK: offlineTopK, temperature: offlineTemperature,
                      randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, audioRealtime: offlineAudioRealtime, maxNumImages: offlineMaxNumImages,
-                     dtype: model?.dtype || 'q4f16'
+                     dtype: model?.dtype || 'q4',
+                     generationMode: model?.generationMode || 'Gemma4ForConditionalGeneration'
                  };
                  getOrCreateWorker().postMessage({ type: 'init', payload: { engine: 'transformers', modelSource: modelToLoad, options } });
             } else {

@@ -47,7 +47,8 @@ export const OFFLINE_MODELS_TS = [
     { 
         name: 'Gemma-4-E2B-it (3.8 GB)', 
         value: 'onnx-community/gemma-4-E2B-it-ONNX', 
-        dtype: 'q4'
+        dtype: 'q4',
+		generationMode: 'Gemma4ForConditionalGeneration'
 		/*dtype: {
 			embed_tokens: "q2f16",
 			vision_encoder: "fp16",
@@ -58,7 +59,14 @@ export const OFFLINE_MODELS_TS = [
     { 
         name: 'Gemma-4-E4B-it (4.5 GB)', 
         value: 'onnx-community/gemma-4-E4B-it-ONNX', 
-        dtype: 'q4'
+        dtype: 'q4',
+		generationMode: 'Gemma4ForConditionalGeneration'
+    },
+	{ 
+        name: 'Qwen3.5-4B (3.11 GB)', 
+        value: 'onnx-community/Qwen3.5-4B-ONNX-OPT', 
+        dtype: 'q4',
+		generationMode: 'Qwen3_5ForConditionalGeneration'
     },
 ];
 
