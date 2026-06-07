@@ -9,8 +9,6 @@
     env.useWasmCache = true;    
 	env.useCustomCache = false;
 	env.useBrowserCache = true;
-	env.backends.onnx.wasm.memoryLimit = 2048;
-	env.backends.onnx.wasm.proxy = true
 	
 	if (typeof (self as any).HTMLImageElement === 'undefined') {
 		(self as any).HTMLImageElement = class HTMLImageElement {};

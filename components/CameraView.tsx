@@ -128,7 +128,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
                     const img = new Image();
                     img.onload = () => {
                         let { width, height } = img;
-                        const maxDimension = 1080;
+                        const maxDimension = 720;	//The width of the phone when held horizontally
                         
                         if (width > maxDimension || height > maxDimension) {
                             if (width > height) {
