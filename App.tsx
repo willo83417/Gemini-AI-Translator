@@ -1514,7 +1514,7 @@ const App: React.FC = () => {
                 setIsRecording(true);
                 isReverseTranslateRef.current = false;
                 setInputText(t('notifications.liveTranslateListening'));
-                const targetLangCode = targetLang.code === 'auto' ? 'zh-TW' : targetLang.code;
+                const targetLangCode = targetLang.code === 'auto' ? 'zh' : (targetLang.code === 'zh-Hans' ? 'zh-Hans' : (targetLang.asrCode || targetLang.code));
                 liveServiceRef.current?.start(apiKey, targetLangCode);
             }
             return;
@@ -1701,7 +1701,7 @@ const App: React.FC = () => {
                 setIsAstRecording(true);
                 isReverseTranslateRef.current = true;
                 setInputText(t('notifications.liveTranslateListeningReverse'));
-                const targetLangCode = sourceLang.code === 'auto' ? 'zh-TW' : sourceLang.code;
+                const targetLangCode = sourceLang.code === 'auto' ? 'zh' : (sourceLang.code === 'zh-Hans' ? 'zh-Hans' : (sourceLang.asrCode || sourceLang.code));
                 liveServiceRef.current?.start(apiKey, targetLangCode);
             }
             return;

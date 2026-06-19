@@ -121,28 +121,12 @@ export class GeminiLiveService {
 
         // Map and sanitize target language code to full regional codes for Gemini Live API
         let resolvedTargetLang = targetLangCode;
-        if (resolvedTargetLang === 'zh' || resolvedTargetLang === 'zh-TW' || resolvedTargetLang === 'zh-HK') {
-            resolvedTargetLang = 'zh-TW';
-        } else if (resolvedTargetLang === 'zh-Hans' || resolvedTargetLang === 'zh-CN') {
-            resolvedTargetLang = 'zh-CN';
-        } else if (resolvedTargetLang === 'en') {
-            resolvedTargetLang = 'en-US';
-        } else if (resolvedTargetLang === 'ja') {
-            resolvedTargetLang = 'ja-JP';
-        } else if (resolvedTargetLang === 'es') {
-            resolvedTargetLang = 'es-ES';
-        } else if (resolvedTargetLang === 'fr') {
-            resolvedTargetLang = 'fr-FR';
-        } else if (resolvedTargetLang === 'de') {
-            resolvedTargetLang = 'de-DE';
-        } else if (resolvedTargetLang === 'ko') {
-            resolvedTargetLang = 'ko-KR';
-        } else if (resolvedTargetLang === 'ru') {
-            resolvedTargetLang = 'ru-RU';
-        } else if (resolvedTargetLang === 'it') {
-            resolvedTargetLang = 'it-IT';
+        if (resolvedTargetLang === 'zh') {
+            resolvedTargetLang = 'zh-Hant';
+        } else if (resolvedTargetLang === 'zh-Hans') {
+            resolvedTargetLang = 'zh-Hans';
         }
-
+		console.log("國家代碼:", resolvedTargetLang);
         const setupMessage = {
             setup: {
                 model: 'models/gemini-3.5-live-translate-preview',
