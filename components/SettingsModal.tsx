@@ -555,6 +555,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white"
                                     placeholder={onlineProvider === 'gemini' ? t('settings.modelNameGeminiPlaceholder') : t('settings.modelNameOpenAIPlaceholder')}
                                 />
+                                {onlineProvider === 'gemini' && (
+                                    <div className="mt-2 flex flex-col gap-1.5">
+                                        <div className="flex flex-wrap gap-2 items-center">
+                                            <span className="text-xs text-gray-500">✨ 推薦文字/圖片模型：</span>
+                                            <button 
+                                                type="button"
+                                                onClick={() => setModelName('gemini-3.1-flash-lite')}
+                                                className="text-xs px-2 py-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-md hover:bg-blue-100 transition whitespace-nowrap font-medium"
+                                            >
+                                                gemini-3.1-flash-lite
+                                            </button>
+                                        </div>
+                                        <p className="text-[11px] text-gray-500 flex items-center gap-1 bg-indigo-50 border border-indigo-100 rounded p-1.5 mt-0.5">
+                                            <span className="shrink-0 text-indigo-500">🚀</span>
+                                            <span className="text-indigo-700 leading-normal">
+                                                語音通話與麥克風按鈕已自動啟用 <b>gemini-3.5-live-translate-preview</b> 雙向即時口譯，免去手動切換的繁瑣事宜！
+                                            </span>
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

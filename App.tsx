@@ -16,6 +16,7 @@ import { usePaddleOcr } from './hooks/usePaddleOcr';
 import { deleteOcrModelCache } from './utils/db';
 import type { Language, TranslationHistoryItem, CustomOfflineModel, EsearchOCROutput, EsearchOCRItem } from './types';
 import { LANGUAGES, OFFLINE_MODELS, OFFLINE_MODELS_TS, ASR_MODELS, OCR_MODELS } from './constants';
+import { GeminiLiveService } from './services/geminiLiveService';
 
 interface SpeechRecognition {
     continuous: boolean;
@@ -233,6 +234,18 @@ const App: React.FC = () => {
         }
         return LANGUAGES[6];
     });
+
+    const sourceLangRef = useRef<Language>(sourceLang);
+    const targetLangRef = useRef<Language>(targetLang);
+
+    useEffect(() => {
+        sourceLangRef.current = sourceLang;
+    }, [sourceLang]);
+
+    useEffect(() => {
+        targetLangRef.current = targetLang;
+    }, [targetLang]);
+
     const [isLoading, setIsLoading] = useState(false);
     const [isTranscribing, setIsTranscribing] = useState(false);
     
@@ -353,6 +366,130 @@ const App: React.FC = () => {
     const isReverseTranslateRef = useRef(false);
     const isAsrProcessingRef = useRef(false);
 
+    // Gemini 3.5 Live Service State & Ref
+    const liveServiceRef = useRef<GeminiLiveService | null>(null);
+    const [liveStatus, setLiveStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'listening'>('disconnected');
+
+    // Refs for streaming text accumulation in Gemini 3.5 Live Translate
+    const accumulatedInputRef = useRef('');
+    const accumulatedTranslatedRef = useRef('');
+    const currentActiveInputRef = useRef('');
+    const currentActiveTranslatedRef = useRef('');
+
+    useEffect(() => {
+        liveServiceRef.current = new GeminiLiveService({
+            onOpen: () => {
+                console.log("Live Translate Session Opened");
+            },
+            onClose: (reason) => {
+                console.log("Live Translate Session Closed:", reason);
+				// Commit any remaining active transcripts before ending
+                if (currentActiveInputRef.current) {
+                    accumulatedInputRef.current = accumulatedInputRef.current + currentActiveInputRef.current;
+                    currentActiveInputRef.current = '';
+                }
+                if (currentActiveTranslatedRef.current) {
+                    accumulatedTranslatedRef.current = accumulatedTranslatedRef.current  + currentActiveTranslatedRef.current;
+                    currentActiveTranslatedRef.current = '';
+                }
+
+                // Save to translation history if we have any dynamic final output
+                const finalIn = accumulatedInputRef.current;
+                const finalOut = accumulatedTranslatedRef.current;
+                if (finalIn.trim() || finalOut.trim()) {
+                    const newHistoryItem: TranslationHistoryItem = {
+                        id: Date.now(),
+                        inputText: finalIn,
+                        translatedText: finalOut,
+                        sourceLang: isReverseTranslateRef.current ? targetLangRef.current : sourceLangRef.current,
+                        targetLang: isReverseTranslateRef.current ? sourceLangRef.current : targetLangRef.current,
+                    };
+                    setHistory(prevHistory => {
+                        const isDuplicate = prevHistory.length > 0 && 
+                            prevHistory[0].inputText === finalIn && 
+                            prevHistory[0].translatedText === finalOut;
+                        if (isDuplicate) return prevHistory;
+
+                        const updatedHistory = [newHistoryItem, ...prevHistory].slice(0, 50);
+                        localStorage.setItem('translation-history', JSON.stringify(updatedHistory));
+                        return updatedHistory;
+                    });
+                }
+
+                setIsRecording(false);
+                setIsAstRecording(false);
+                isReverseTranslateRef.current = false;
+            },
+            onError: (err) => {
+                showNotification(err, 'error');
+                setIsRecording(false);
+                setIsAstRecording(false);
+                isReverseTranslateRef.current = false;
+            },
+            onText: (text) => {
+                // If modelTurn text chunk is received, append it to current active translation,
+                // but only if we haven't already got a longer outputTranscription (to avoid conflicts)
+                if (text && text.length > 0) {
+                    if (currentActiveTranslatedRef.current.length < text.length) {
+                        currentActiveTranslatedRef.current += text;
+                    }
+                    const displayInput = accumulatedInputRef.current + currentActiveInputRef.current;
+                    const displayTranslated = accumulatedTranslatedRef.current + currentActiveTranslatedRef.current;
+                    setInputText(displayInput);
+                    setTranslatedText(displayTranslated);
+                }
+            },
+			onInputTranscription: (text) => {
+                const lastText = currentActiveInputRef.current;
+                if (lastText && text !== lastText) {
+                    const normalizedLast = lastText.trim().toLowerCase();
+                    const normalizedNew = text.trim().toLowerCase();
+                    
+                    // Detect if a brand new segment has started
+                    const isContinuation = normalizedNew.startsWith(normalizedLast) || 
+                                          (normalizedLast.length > 3 && normalizedNew.startsWith(normalizedLast.slice(0, Math.min(normalizedLast.length, 8))));
+                    
+                    if (!isContinuation) {
+                        // Commit the completed segment!
+                        accumulatedInputRef.current = accumulatedInputRef.current + lastText;
+                        accumulatedTranslatedRef.current = accumulatedTranslatedRef.current + currentActiveTranslatedRef.current;
+                        currentActiveTranslatedRef.current = '';
+                    }
+                }
+                currentActiveInputRef.current = text;
+
+                const displayInput = accumulatedInputRef.current + text;
+                const displayTranslated = accumulatedTranslatedRef.current + currentActiveTranslatedRef.current;
+                
+                setInputText(displayInput);
+                setTranslatedText(displayTranslated);
+            },
+            onOutputTranscription: (text) => {
+                // Since onOutputTranscription is absolute / growing for the current turn, update it directly
+                currentActiveTranslatedRef.current = text;
+
+                const displayInput = accumulatedInputRef.current + currentActiveInputRef.current;
+                const displayTranslated = accumulatedTranslatedRef.current + text;
+
+                setInputText(displayInput);
+                setTranslatedText(displayTranslated);
+            },
+            onStatusChange: (status) => {
+                setLiveStatus(status);
+            },
+            onSpeakingChange: (isLiveSpeaking) => {
+                setIsSpeaking(isLiveSpeaking);
+                setSpeakingGender(isLiveSpeaking ? 'female' : null);
+            }
+        });
+
+        return () => {
+            if (liveServiceRef.current) {
+                liveServiceRef.current.stop();
+            }
+        };
+    }, [showNotification]);
+
     // --- MediaPipe Worker Logic (Offline LLM) ---
     const getOrCreateWorker = useCallback(() => {
         if (workerRef.current) {
@@ -385,6 +522,8 @@ const App: React.FC = () => {
     const isTSModelSelected = OFFLINE_MODELS_TS.some(m => m.value === offlineModelName);
     const isModelDownloaded = isOfflineModeEnabled && !!offlineModelName && (isTSModelSelected || downloadProgress[offlineModelName]?.status === 'completed');
     const isOfflineModelReady = isModelDownloaded && isOfflineModelInitialized;
+    const isGeminiLiveModel = onlineProvider === 'gemini' && !isOfflineModeEnabled;
+    const textModelName = modelName === 'gemini-3.5-live-translate-preview' ? 'gemini-3.1-flash-lite' : modelName;
 
     const performTranslate = useCallback(async (textToTranslate: string) => {
         if (!textToTranslate.trim()) {
@@ -434,10 +573,10 @@ const App: React.FC = () => {
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set. Please add it in the settings.");
-                    finalResult = await translateTextOpenAIStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, openaiApiUrl, onChunk, controller.signal);
+                    finalResult = await translateTextOpenAIStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, textModelName, openaiApiUrl, onChunk, controller.signal);
                 } else { // Gemini is default
                     if (!apiKey) throw new Error("Gemini API Key is not set. Please add it in the settings.");
-                    finalResult = await translateTextGeminiStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, onChunk, controller.signal);
+                    finalResult = await translateTextGeminiStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, textModelName, onChunk, controller.signal);
                 }
     
                 const newHistoryItem: TranslationHistoryItem = {
@@ -468,7 +607,7 @@ const App: React.FC = () => {
                 translationAbortControllerRef.current = null;
             }
         }
-    }, [sourceLang, targetLang, apiKey, modelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t, i18n, getOrCreateWorker]);
+    }, [sourceLang, targetLang, apiKey, modelName, textModelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t, i18n, getOrCreateWorker]);
 
     const performReverseTranslate = useCallback(async (textToTranslate: string) => {
         if (!textToTranslate.trim()) {
@@ -519,10 +658,10 @@ const App: React.FC = () => {
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set.");
-                    finalResult = await translateTextOpenAIStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, openaiApiUrl, onChunk, controller.signal);
+                    finalResult = await translateTextOpenAIStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, textModelName, openaiApiUrl, onChunk, controller.signal);
                 } else {
                     if (!apiKey) throw new Error("Gemini API Key is not set.");
-                    finalResult = await translateTextGeminiStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, modelName, onChunk, controller.signal);
+                    finalResult = await translateTextGeminiStream(textToTranslate, sourceLangEn, targetLangEn, apiKey, textModelName, onChunk, controller.signal);
                 }
 
                 const newHistoryItem: TranslationHistoryItem = {
@@ -549,7 +688,7 @@ const App: React.FC = () => {
                 translationAbortControllerRef.current = null;
             }
         }
-    }, [targetLang, sourceLang, apiKey, modelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t, i18n, getOrCreateWorker]);
+    }, [targetLang, sourceLang, apiKey, modelName, textModelName, isOnline, isOfflineModeEnabled, offlineModelName, isOfflineModelReady, isOfflineModelInitializing, showNotification, onlineProvider, openaiApiUrl, isTwoStepJpCn, t, i18n, getOrCreateWorker]);
 
     useEffect(() => {
         messageHandlerRef.current = (event: MessageEvent) => {
@@ -1314,12 +1453,14 @@ const App: React.FC = () => {
     });
 
     const stopAllRecordings = useCallback(() => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        if (isGeminiLiveModel) {
+            liveServiceRef.current?.stop();
+        } else if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             mediaRecorderRef.current.stop();
         } else if (webSpeech.isListening) {
             webSpeech.stopRecognition();
         }
-    }, [webSpeech]);
+    }, [webSpeech, isGeminiLiveModel]);
 
     useEffect(() => {
         // Only apply 30-second countdown if realtime ASR is disabled AND we are using offline ASR (Whisper)
@@ -1355,6 +1496,30 @@ const App: React.FC = () => {
 
 
     const handleToggleRecording = useCallback(() => {
+        if (isGeminiLiveModel) {
+            if (isRecording) {
+                liveServiceRef.current?.stop();
+                setIsRecording(false);
+                isReverseTranslateRef.current = false;
+            } else {
+                if (isAstRecording) {
+                    liveServiceRef.current?.stop();
+                    setIsAstRecording(false);
+                }
+				accumulatedInputRef.current = '';
+                accumulatedTranslatedRef.current = '';
+                currentActiveInputRef.current = '';
+                currentActiveTranslatedRef.current = '';
+                setTranslatedText('');
+                setIsRecording(true);
+                isReverseTranslateRef.current = false;
+                setInputText(t('notifications.liveTranslateListening'));
+                const targetLangCode = targetLang.code === 'auto' ? 'zh-TW' : targetLang.code;
+                liveServiceRef.current?.start(apiKey, targetLangCode);
+            }
+            return;
+        }
+
         const isCurrentlyRecording = isRecording || (!isOfflineAsrEnabled && isWebSpeechApiEnabled && webSpeech.isListening && !isReverseTranslateRef.current);
         if (isCurrentlyRecording) {
             if (isOfflineAsrEnabled || !isWebSpeechApiEnabled) {
@@ -1501,7 +1666,7 @@ const App: React.FC = () => {
                             transcribedText = await transcribeAudioOpenAI(processedBlob, langCode, apiKey, openaiApiUrl, controller.signal);
                         } else {
                             const langName = sourceLang.code === 'auto' ? 'Auto Detect' : sourceLang.code;
-                            transcribedText = await transcribeAudioGemini(processedBlob, langName, apiKey, modelName, controller.signal);
+                            transcribedText = await transcribeAudioGemini(processedBlob, langName, apiKey, textModelName, controller.signal);
                         }
                         setInputText(transcribedText);
                     } catch (err) {
@@ -1515,9 +1680,33 @@ const App: React.FC = () => {
                 });
             }
         }
-    }, [isRecording, isAstRecording, showNotification, t, sourceLang, isOfflineAsrEnabled, isRealtimeAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, isOfflineModelReady, offlineSupportAudio, getOrCreateWorker, i18n]);
+    }, [isRecording, isAstRecording, showNotification, t, sourceLang, targetLang, isOfflineAsrEnabled, isRealtimeAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, isOfflineModelReady, offlineSupportAudio, getOrCreateWorker, i18n, isGeminiLiveModel, liveServiceRef]);
 
     const handleToggleAstRecording = useCallback(() => {
+        if (isGeminiLiveModel) {
+            if (isAstRecording) {
+                liveServiceRef.current?.stop();
+                setIsAstRecording(false);
+                isReverseTranslateRef.current = false;
+            } else {
+                if (isRecording) {
+                    liveServiceRef.current?.stop();
+                    setIsRecording(false);
+                }
+				accumulatedInputRef.current = '';
+                accumulatedTranslatedRef.current = '';
+                currentActiveInputRef.current = '';
+                currentActiveTranslatedRef.current = '';
+                setTranslatedText('');
+                setIsAstRecording(true);
+                isReverseTranslateRef.current = true;
+                setInputText(t('notifications.liveTranslateListeningReverse'));
+                const targetLangCode = sourceLang.code === 'auto' ? 'zh-TW' : sourceLang.code;
+                liveServiceRef.current?.start(apiKey, targetLangCode);
+            }
+            return;
+        }
+
         const isCurrentlyAstRecording = isAstRecording || (!isOfflineAsrEnabled && isWebSpeechApiEnabled && webSpeech.isListening && isReverseTranslateRef.current);
 
         if (isCurrentlyAstRecording) {
@@ -1666,7 +1855,7 @@ const App: React.FC = () => {
                             transcribedText = await transcribeAudioOpenAI(processedBlob, langCode, apiKey, openaiApiUrl, controller.signal);
                         } else {
                             const langName = targetLang.code;
-                            transcribedText = await transcribeAudioGemini(processedBlob, langName, apiKey, modelName, controller.signal);
+                            transcribedText = await transcribeAudioGemini(processedBlob, langName, apiKey, textModelName, controller.signal);
                         }
                         setInputText(transcribedText);
                         if (transcribedText.trim()) {
@@ -1684,7 +1873,7 @@ const App: React.FC = () => {
                 });
             }
         }
-    }, [isAstRecording, isRecording, targetLang, showNotification, t, isOfflineAsrEnabled, isRealtimeAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, offlineSupportAudio, isOfflineModelReady, getOrCreateWorker, performReverseTranslate, i18n]);
+    }, [isAstRecording, isRecording, sourceLang, targetLang, showNotification, t, isOfflineAsrEnabled, isRealtimeAsrEnabled, webSpeech, isNoiseCancellationEnabled, audioGainValue, isWebSpeechApiEnabled, onlineProvider, apiKey, openaiApiUrl, modelName, isOfflineModeEnabled, offlineSupportAudio, isOfflineModelReady, getOrCreateWorker, performReverseTranslate, i18n, isGeminiLiveModel, liveServiceRef]);
 
     const handleImageCaptured = useCallback(async (imageDataUrl: string) => {
         //console.log('[App] handleImageCaptured triggered. OCR Status:', ocrEngineStatus);
@@ -1765,10 +1954,10 @@ const App: React.FC = () => {
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set.");
-                    result = await translateImageOpenAI(imageDataUrl, targetLangEn, apiKey, modelName, openaiApiUrl);
+                    result = await translateImageOpenAI(imageDataUrl, targetLangEn, apiKey, textModelName, openaiApiUrl);
                 } else {
                     if (!apiKey) throw new Error("Gemini API Key is not set.");
-                    result = await translateImageGemini(imageDataUrl, targetLangEn, apiKey, modelName);
+                    result = await translateImageGemini(imageDataUrl, targetLangEn, apiKey, textModelName);
                 }
                 
                 setInputText(result.sourceText);
