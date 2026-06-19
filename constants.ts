@@ -75,7 +75,7 @@ export const ASR_MODELS: AsrModel[] = [
         id: 'willopcbeta/lite-whisper-large-v3-turbo-ONNX',
         name: 'lite-whisper-large-v3-turbo',
         quantization: {
-            encoder_model: 'q4',
+            encoder_model: 'q4f16',
             decoder_model_merged: 'q4',
         },
         size: '~590 MB'
@@ -93,7 +93,7 @@ export const ASR_MODELS: AsrModel[] = [
         id: 'willopcbeta/lite-whisper-small-fast-ONNX-v2',
         name: 'lite-whisper-small-fast',
         quantization: {
-            encoder_model: 'q4',
+            encoder_model: 'q4f16',
             decoder_model_merged: 'q4',
         },
         size: '~280 MB'
