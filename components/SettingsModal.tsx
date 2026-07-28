@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { XIcon, TrashIcon } from './icons';
 import { DownloadProgress } from '../services/downloadManager';
 import { OFFLINE_MODELS, OFFLINE_MODELS_TS, ASR_MODELS, OCR_MODELS } from '../constants';
-import type { Language, OcrEngineStatus, OcrModelConfig } from '../types';
+import type { Language, OcrEngineStatus, OcrModelConfig, AsrEngineType, NemotronProfile, NemotronBeamWidth } from '../types';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -37,6 +37,9 @@ interface SettingsModalProps {
         audioGainValue: number,
         selectedOcrModel: keyof typeof OCR_MODELS,
         isOcrAutoInitEnabled: boolean,
+        newAsrEngine: AsrEngineType,
+        newAsrProfile: NemotronProfile,
+        newAsrBeamWidth: NemotronBeamWidth
     ) => void;
     currentApiKey: string;
     currentModelName: string;
@@ -70,6 +73,9 @@ interface SettingsModalProps {
     currentIsRealtimeAsrEnabled: boolean;
     currentIsWebSpeechApiEnabled: boolean;
     currentAsrModelId: string;
+    currentAsrEngine: AsrEngineType;
+    currentAsrProfile: NemotronProfile;
+    currentAsrBeamWidth: NemotronBeamWidth;
     currentIsNoiseCancellationEnabled: boolean;
     currentAudioGainValue: number;
     asrModelsCacheStatus: Record<string, boolean>;
@@ -123,6 +129,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     currentIsRealtimeAsrEnabled,
     currentIsWebSpeechApiEnabled,
     currentAsrModelId,
+    currentAsrEngine,
+    currentAsrProfile,
+    currentAsrBeamWidth,
     currentIsNoiseCancellationEnabled,
     currentAudioGainValue,
     asrModelsCacheStatus,
@@ -158,6 +167,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [isRealtimeAsrEnabled, setIsRealtimeAsrEnabled] = useState(currentIsRealtimeAsrEnabled);
     const [isWebSpeechApiEnabled, setIsWebSpeechApiEnabled] = useState(currentIsWebSpeechApiEnabled);
     const [asrModelId, setAsrModelId] = useState(currentAsrModelId);
+    const [asrEngine, setAsrEngine] = useState(currentAsrEngine);
+    const [asrProfile, setAsrProfile] = useState(currentAsrProfile);
+    const [asrBeamWidth, setAsrBeamWidth] = useState(currentAsrBeamWidth);
     const [isNoiseCancellationEnabled, setIsNoiseCancellationEnabled] = useState(currentIsNoiseCancellationEnabled);
     const [audioGainValue, setAudioGainValue] = useState(currentAudioGainValue);
 
@@ -213,6 +225,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             setIsRealtimeAsrEnabled(currentIsRealtimeAsrEnabled);
             setIsWebSpeechApiEnabled(currentIsWebSpeechApiEnabled);
             setAsrModelId(currentAsrModelId);
+            setAsrEngine(currentAsrEngine);
+            setAsrProfile(currentAsrProfile);
+            setAsrBeamWidth(currentAsrBeamWidth);
             setIsNoiseCancellationEnabled(currentIsNoiseCancellationEnabled);
             setAudioGainValue(currentAudioGainValue);
             
@@ -227,7 +242,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         currentOfflineTtsRate, currentOfflineTtsPitch, currentOfflineMaxTokens, currentOfflineTopK, 
         currentOfflineTemperature, currentOfflineRandomSeed, currentOfflineSupportAudio, currentOfflineAudioRealtime,
         currentOfflineMaxNumImages, currentIsOfflineAsrEnabled, currentIsRealtimeAsrEnabled, currentIsWebSpeechApiEnabled,
-        currentAsrModelId, currentIsNoiseCancellationEnabled, currentAudioGainValue, currentSelectedOcrModel,
+        currentAsrModelId, currentAsrEngine, currentAsrProfile, currentAsrBeamWidth, currentIsNoiseCancellationEnabled, currentAudioGainValue, currentSelectedOcrModel,
         currentIsOcrAutoInitEnabled
     ]);
     
@@ -258,14 +273,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             apiKey, modelName, huggingFaceApiKey, offlineModelName, asrModelId, isOfflineEnabled, isOfflineAsrEnabled, isRealtimeAsrEnabled, isWebSpeechApiEnabled, onlineProvider, openaiApiUrl,
             isOfflineTtsEnabled, offlineTtsVoiceURI, offlineTtsRate, offlineTtsPitch, isTwoStepJpCnEnabled,
             offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineAudioRealtime, offlineMaxNumImages,
-            isNoiseCancellationEnabled, audioGainValue, selectedOcrModel, isOcrAutoInitEnabled
+            isNoiseCancellationEnabled, audioGainValue, selectedOcrModel, isOcrAutoInitEnabled, asrEngine, asrProfile, asrBeamWidth
         );
         onClose();
     };
 
     const handleClear = () => {
         setApiKey('');
-        setModelName('gemini-3.1-flash-lite');
+        setModelName('gemini-3.5-flash-lite');
         setOnlineProvider('gemini');
         setOpenaiApiUrl('');
         setHuggingFaceApiKey('');
@@ -291,13 +306,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setIsRealtimeAsrEnabled(false);
         setIsWebSpeechApiEnabled(true);
         setAsrModelId(ASR_MODELS[0].id);
+        setAsrEngine('whisper');
+        setAsrProfile('NORMAL');
+        setAsrBeamWidth(1);
         setIsNoiseCancellationEnabled(false);
         setAudioGainValue(1.0);
         onClearAsrCache();
 
         OFFLINE_MODELS.forEach(model => model.value && onDeleteModel(model.value));
         onClearSettings();
-        onSave('', 'gemini-3.1-flash-lite', '', '', ASR_MODELS[0].id, false, false, false, true, 'gemini', '', false, '', 1, 1, false, 2048, 40, 0.3, 1, false, false, 0, false, 0, 'ch_v5', false);
+        onSave('', 'gemini-3.5-flash-lite', '', '', ASR_MODELS[0].id, false, false, false, true, 'gemini', '', false, '', 1, 1, false, 2048, 40, 0.3, 1, false, false, 0, false, 0, 'ch_v5', false, 'whisper', 'NORMAL', 1);
     };
 
     const handleDownloadedModelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -561,16 +579,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                             <span className="text-xs text-gray-500">✨ 推薦文字/圖片模型：</span>
                                             <button 
                                                 type="button"
-                                                onClick={() => setModelName('gemini-3.1-flash-lite')}
+                                                onClick={() => setModelName('gemini-3.5-flash-lite')}
                                                 className="text-xs px-2 py-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-md hover:bg-blue-100 transition whitespace-nowrap font-medium"
                                             >
-                                                gemini-3.1-flash-lite
+                                                gemini-3.5-flash-lite
                                             </button>
                                         </div>
                                         <p className="text-[11px] text-gray-500 flex items-center gap-1 bg-indigo-50 border border-indigo-100 rounded p-1.5 mt-0.5">
                                             <span className="shrink-0 text-indigo-500">🚀</span>
                                             <span className="text-indigo-700 leading-normal">
-                                                語音通話與麥克風按鈕已自動啟用 <b>gemini-3.5-live-translate-preview</b> 雙向即時口譯，免去手動切換的繁瑣事宜！
+                                                語音通話與麥克風按鈕已自動啟用 <b>gemini-3.5-live-translate</b> 雙向即時口譯，免去手動切換的繁瑣事宜！
                                             </span>
                                         </p>
                                     </div>
@@ -724,54 +742,129 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 description={t('settings.enableRealtimeAsrDescription', '即時辨識並轉換成文字')}
                                 disabled={!isOfflineAsrEnabled}
                              />
-                            <div className={`space-y-3 transition-opacity ${!isOfflineAsrEnabled ? 'opacity-50' : ''}`}>
-                                <label className={`block text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>{t('settings.asrModelLabel')}</label>
-                                {ASR_MODELS.map(model => {
-                                    const isCached = asrModelsCacheStatus[model.id] || false;
-                                    const isLoadingThisModel = isAsrInitializing && asrModelId === model.id;
-                                    return (
-                                        <div key={model.id} className="p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-2">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center">
-                                                    <input
-                                                        type="radio"
-                                                        id={`asr-model-${model.id}`}
-                                                        name="asr-model-selection"
-                                                        value={model.id}
-                                                        checked={asrModelId === model.id}
-                                                        onChange={handleAsrModelSelect}
-                                                        className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                                                        disabled={!isOfflineAsrEnabled}
-                                                    />
-                                                    <label htmlFor={`asr-model-${model.id}`} className={`ml-3 text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-800'}`}>
-                                                        {model.name} <span className="text-gray-500 font-normal">({model.size})</span>
-                                                    </label>
-                                                </div>
-                                                <div className="flex items-center space-x-3">
-                                                    {!isLoadingThisModel && (
-                                                        isCached ? (
-                                                            <span className="text-sm font-medium text-green-600">{t('settings.modelCached') || 'Cached'}</span>
-                                                        ) : (
-                                                            <button
-                                                                onClick={() => onDownloadAsrModel(model.id)}
-                                                                disabled={isAsrInitializing || !isOfflineAsrEnabled}
-                                                                className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed"
-                                                            >
-                                                                {t('settings.modelDownload') || 'Download'}
-                                                            </button>
-                                                        )
+                            <div className={`space-y-4 transition-opacity ${!isOfflineAsrEnabled ? 'opacity-50' : ''}`}>
+                                <div>
+                                    <label className={`block text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>ASR Engine</label>
+                                    <select
+                                        value={asrEngine}
+                                        onChange={(e) => setAsrEngine(e.target.value as AsrEngineType)}
+                                        disabled={!isOfflineAsrEnabled}
+                                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                    >
+                                        <option value="whisper">Transformers.js Whisper</option>
+                                        <option value="nemotron">Nemotron-ASR (onnxruntime-web)</option>
+                                    </select>
+                                </div>
+                                {asrEngine === 'whisper' && (
+                                    <div className="space-y-3">
+                                        <label className={`block text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-700'}`}>{t('settings.asrModelLabel')}</label>
+                                        {ASR_MODELS.map(model => {
+                                            const isCached = asrModelsCacheStatus[model.id] || false;
+                                            const isLoadingThisModel = isAsrInitializing && asrModelId === model.id;
+                                            return (
+                                                <div key={model.id} className="p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center">
+                                                            <input
+                                                                type="radio"
+                                                                id={`asr-model-${model.id}`}
+                                                                name="asr-model-selection"
+                                                                value={model.id}
+                                                                checked={asrModelId === model.id}
+                                                                onChange={handleAsrModelSelect}
+                                                                className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                                disabled={!isOfflineAsrEnabled}
+                                                            />
+                                                            <label htmlFor={`asr-model-${model.id}`} className={`ml-3 text-sm font-medium ${!isOfflineAsrEnabled ? 'text-gray-400' : 'text-gray-800'}`}>
+                                                                {model.name} <span className="text-gray-500 font-normal">({model.size})</span>
+                                                            </label>
+                                                        </div>
+                                                        <div className="flex items-center space-x-3">
+                                                            {!isLoadingThisModel && (
+                                                                isCached ? (
+                                                                    <span className="text-sm font-medium text-green-600">{t('settings.modelCached') || 'Cached'}</span>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => onDownloadAsrModel(model.id)}
+                                                                        disabled={isAsrInitializing || !isOfflineAsrEnabled}
+                                                                        className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                                                    >
+                                                                        {t('settings.modelDownload') || 'Download'}
+                                                                    </button>
+                                                                )
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    {isLoadingThisModel && (
+                                                        <div className="pt-1 text-center text-sm text-blue-600">
+                                                            {asrLoadingProgress.file} ({Math.round(asrLoadingProgress.progress)}%)
+                                                        </div>
                                                     )}
                                                 </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                {asrEngine === 'nemotron' && (
+                                    <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="text-sm font-medium text-gray-800">
+                                                Nemotron-ASR Model <span className="text-gray-500 font-normal">(~863MB)</span>
                                             </div>
-                                            {isLoadingThisModel && (
-                                                <div className="pt-1 text-center text-sm text-blue-600">
-                                                    {asrLoadingProgress.file} ({Math.round(asrLoadingProgress.progress)}%)
-                                                </div>
-                                            )}
+                                            <div className="flex items-center space-x-3">
+                                                {!(isAsrInitializing && asrEngine === 'nemotron') && (
+                                                    asrModelsCacheStatus['nemotron'] ? (
+                                                        <span className="text-sm font-medium text-green-600">{t('settings.modelCached') || 'Cached'}</span>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => onDownloadAsrModel('nemotron')}
+                                                            disabled={isAsrInitializing || !isOfflineAsrEnabled}
+                                                            className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                                        >
+                                                            {t('settings.modelDownload') || 'Download'}
+                                                        </button>
+                                                    )
+                                                )}
+                                            </div>
                                         </div>
-                                    );
-                                })}
-                                 <div>
+                                        {isAsrInitializing && asrEngine === 'nemotron' && (
+                                            <div className="pt-1 text-center text-sm text-blue-600">
+                                                {asrLoadingProgress.file} ({Math.round(asrLoadingProgress.progress)}%)
+                                            </div>
+                                        )}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">Latency Profile (ms)</label>
+                                            <select
+                                                value={asrProfile}
+                                                onChange={(e) => setAsrProfile(e.target.value as NemotronProfile)}
+                                                disabled={!isOfflineAsrEnabled}
+                                                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                            >
+                                                <option value="TURBO">TURBO (80)</option>
+                                                <option value="FAST">FAST (160)</option>
+                                                <option value="BALANCED">BALANCED (320)</option>
+                                                <option value="NORMAL">NORMAL (560)</option>
+                                                <option value="HIGH">HIGH (1120)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">Beam Width</label>
+                                            <select
+                                                value={asrBeamWidth}
+                                                onChange={(e) => setAsrBeamWidth(Number(e.target.value) as NemotronBeamWidth)}
+                                                disabled={!isOfflineAsrEnabled}
+                                                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                                            >
+                                                <option value="1">1 (Greedy)</option>
+                                                <option value="2">2</option>
+                                                <option value="3">3</option>
+                                                <option value="4">4</option>
+                                                <option value="5">5</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+                                <div>
                                     <button
                                         onClick={onClearAsrCache}
                                         disabled={!isOfflineAsrEnabled}

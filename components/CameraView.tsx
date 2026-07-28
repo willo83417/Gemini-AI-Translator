@@ -144,13 +144,28 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
                         canvas.width = width;
                         canvas.height = height;
                         const ctx = canvas.getContext('2d');
-                        if (ctx) {
-                            ctx.drawImage(img, 0, 0, width, height);
-                            const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-                            setPreviewImage(resizedDataUrl);
-                        } else {
-                            setPreviewImage(imageDataUrl);
-                        }
+						if (ctx) {
+							ctx.drawImage(img, 0, 0, width, height);
+							// 嘗試使用 WebP，如果瀏覽器不支援則回退到 JPEG
+							try {
+								const webpDataUrl = canvas.toDataURL('image/webp', 0.9);  
+								// 可選：驗證 WebP 是否有效（某些舊版瀏覽器可能返回空字串）
+								if (webpDataUrl && !webpDataUrl.startsWith('data:image/webp;base64,')) {
+									//console.warn('[CameraView] WebP conversion failed, falling back to JPEG');
+									const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+									setPreviewImage(jpegDataUrl);
+								} else {
+									setPreviewImage(webpDataUrl);
+								}
+							} catch (err) {
+								//console.warn('[CameraView] WebP conversion failed:', err);
+								// Fallback to JPEG
+								const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+								setPreviewImage(jpegDataUrl);
+							}
+						} else {
+						setPreviewImage(imageDataUrl);
+						}
                         setIsCapturing(false);
                     };
                     img.onerror = () => {
@@ -207,7 +222,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
                         <Webcam
                             ref={webcamRef}
                             audio={false}
-                            screenshotFormat="image/jpeg"
+                            screenshotFormat="image/webp"
                             screenshotQuality={0.9}
                             videoConstraints={videoConstraints}
                             onUserMedia={handleUserMedia}

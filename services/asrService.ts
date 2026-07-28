@@ -15,10 +15,19 @@ env.cacheDir = 'transformers-cache';
  */
 export const checkAsrModelCacheStatus = async (modelId: string, quantization?: any): Promise<boolean> => {
     try {
-        // We do a robust custom Cache API check because ModelRegistry.is_pipeline_cached 
-        // sometimes incorrectly returns false for Whisper models due to optional files.
         if (!('caches' in self)) return false;
 
+        if (modelId === 'nemotron') {
+            const cache = await caches.open('nemotron-asr-int4-1');
+            const keys = await cache.keys();
+            // nemotron-asr-core caches several files (encoder, decoder, joint, vocab, etc.)
+            // We just check if the cache has at least one file, or maybe we can check for encoder.onnx
+            const urls = keys.map(k => k.url);
+            return urls.some(url => url.includes('encoder.onnx'));
+        }
+
+        // We do a robust custom Cache API check because ModelRegistry.is_pipeline_cached 
+        // sometimes incorrectly returns false for Whisper models due to optional files.
         const cache = await caches.open('transformers-cache');
         const keys = await cache.keys();
         const urls = keys.map(k => k.url);
@@ -61,6 +70,8 @@ export const clearAsrCache = async (): Promise<void> => {
     try {
         // transformers.js v4 uses different cache names, commonly "transformers-cache"
         await caches.delete('transformers-cache');
+        // Delete nemotron cache
+        await caches.delete('nemotron-asr-int4-1');
         console.log("ASR model cache cleared successfully.");
     } catch (err) {
         console.error("Error clearing ASR model cache:", err);

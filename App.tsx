@@ -14,7 +14,7 @@ import { processAudioForTranscription, checkAsrModelCacheStatus, clearAsrCache }
 import { useWebSpeech } from './hooks/useWebSpeech';
 import { usePaddleOcr } from './hooks/usePaddleOcr';
 import { deleteOcrModelCache } from './utils/db';
-import type { Language, TranslationHistoryItem, CustomOfflineModel, EsearchOCROutput, EsearchOCRItem } from './types';
+import type { Language, TranslationHistoryItem, CustomOfflineModel, EsearchOCROutput, EsearchOCRItem, AsrEngineType, NemotronProfile, NemotronBeamWidth } from './types';
 import { LANGUAGES, OFFLINE_MODELS, OFFLINE_MODELS_TS, ASR_MODELS, OCR_MODELS } from './constants';
 import { GeminiLiveService } from './services/geminiLiveService';
 
@@ -260,7 +260,7 @@ const App: React.FC = () => {
     
     // Shared settings
     const [apiKey, setApiKey] = useState('');
-    const [modelName, setModelName] = useState('gemini-3.1-flash-lite');
+    const [modelName, setModelName] = useState('gemini-3.5-flash-lite');
 
     // Online provider settings
     const [onlineProvider, setOnlineProvider] = useState('gemini');
@@ -302,6 +302,9 @@ const App: React.FC = () => {
     const [isOfflineAsrEnabled, setIsOfflineAsrEnabled] = useState(false);
     const [isRealtimeAsrEnabled, setIsRealtimeAsrEnabled] = useState(false);
     const [asrModelId, setAsrModelId] = useState(ASR_MODELS[0].id);
+    const [asrEngine, setAsrEngine] = useState<AsrEngineType>('whisper');
+    const [asrProfile, setAsrProfile] = useState<NemotronProfile>('NORMAL');
+    const [asrBeamWidth, setAsrBeamWidth] = useState<NemotronBeamWidth>(1);
     const [isAsrInitializing, setIsAsrInitializing] = useState(false);
     const [isAsrInitialized, setIsAsrInitialized] = useState(false);
     const [asrModelsCacheStatus, setAsrModelsCacheStatus] = useState<Record<string, boolean>>({});
@@ -523,7 +526,7 @@ const App: React.FC = () => {
     const isModelDownloaded = isOfflineModeEnabled && !!offlineModelName && (isTSModelSelected || downloadProgress[offlineModelName]?.status === 'completed');
     const isOfflineModelReady = isModelDownloaded && isOfflineModelInitialized;
     const isGeminiLiveModel = onlineProvider === 'gemini' && !isOfflineModeEnabled;
-    const textModelName = modelName === 'gemini-3.5-live-translate-preview' ? 'gemini-3.1-flash-lite' : modelName;
+    const textModelName = modelName === 'gemini-3.5-live-translate-preview' ? 'gemini-3.5-flash-lite' : modelName;
 
     const performTranslate = useCallback(async (textToTranslate: string) => {
         if (!textToTranslate.trim()) {
@@ -868,6 +871,7 @@ const App: React.FC = () => {
         for (const model of ASR_MODELS) {
             statuses[model.id] = await checkAsrModelCacheStatus(model.id, model.quantization);
         }
+        statuses['nemotron'] = await checkAsrModelCacheStatus('nemotron');
         return statuses;
     }, []);
 
@@ -900,7 +904,12 @@ const App: React.FC = () => {
                 showNotification(t('notifications.asrModelUnloaded'), 'info');
                 break;
             case 'transcription-partial':
-                setInputText(payload);
+                isAsrProcessingRef.current = false;
+                if (!isReverseTranslateRef.current) {
+                    setInputText(payload);
+                } else {
+                    setTranslatedText(payload);
+                }
                 break;
             case 'transcription':
                 isAsrProcessingRef.current = false;
@@ -949,13 +958,18 @@ const App: React.FC = () => {
         if (asrWorkerRef.current) {
             asrWorkerRef.current.terminate();
         }
-        const newWorker = new Worker(new URL('./services/asr.worker.ts', import.meta.url), {
+        
+        let workerUrl = new URL('./services/asr.worker.ts', import.meta.url);
+        if (asrEngine === 'nemotron') {
+            workerUrl = new URL('./services/nemotron.worker.ts', import.meta.url);
+        }
+
+        const newWorker = new Worker(workerUrl, {
             type: 'module',
         });
         newWorker.addEventListener('message', onAsrWorkerMessage);
         asrWorkerRef.current = newWorker;
-    }, [onAsrWorkerMessage]);
-
+    }, [onAsrWorkerMessage, asrEngine]);
 
     // Effect to manage ASR Worker creation and destruction, ensuring listeners are always up-to-date
     useEffect(() => {
@@ -963,7 +977,7 @@ const App: React.FC = () => {
             initializeAsrWorker();
         }
         
-        // Cleanup function for when the component unmounts or offline ASR is disabled
+        // Cleanup function for when the component unmounts or offline ASR is disabled or engine changes
         return () => {
             if (asrWorkerRef.current) {
                 asrWorkerRef.current.terminate();
@@ -972,7 +986,7 @@ const App: React.FC = () => {
                 setIsAsrInitializing(false);
             }
         };
-    }, [isOfflineAsrEnabled, initializeAsrWorker]);
+    }, [isOfflineAsrEnabled, asrEngine, initializeAsrWorker]);
 
 
     // --- Common Effects ---
@@ -1077,6 +1091,15 @@ const App: React.FC = () => {
         const savedAsrModel = localStorage.getItem('asr-model-id');
         if (savedAsrModel) setAsrModelId(savedAsrModel);
 
+        const savedAsrEngine = localStorage.getItem('asr-engine');
+        if (savedAsrEngine) setAsrEngine(savedAsrEngine as AsrEngineType);
+
+        const savedAsrProfile = localStorage.getItem('asr-profile');
+        if (savedAsrProfile) setAsrProfile(savedAsrProfile as NemotronProfile);
+
+        const savedAsrBeamWidth = localStorage.getItem('asr-beam-width');
+        if (savedAsrBeamWidth) setAsrBeamWidth(JSON.parse(savedAsrBeamWidth) as NemotronBeamWidth);
+
         const savedNoiseCancellation = localStorage.getItem('is-noise-cancellation-enabled');
         if (savedNoiseCancellation) setIsNoiseCancellationEnabled(JSON.parse(savedNoiseCancellation));
 
@@ -1148,16 +1171,17 @@ const App: React.FC = () => {
 
     // Queue ASR initialization
     useEffect(() => {
-        if (isOfflineAsrEnabled && asrModelId && !isAsrInitialized && !isAsrInitializing) {
+        if (isOfflineAsrEnabled && (asrModelId || asrEngine === 'nemotron') && !isAsrInitialized && !isAsrInitializing) {
             const checkAndQueue = async () => {
-                const isCached = await checkAsrModelCacheStatus(asrModelId);
+                const targetId = asrEngine === 'nemotron' ? 'nemotron' : asrModelId;
+                const isCached = await checkAsrModelCacheStatus(targetId);
                 if (isCached) {
                     setLoadingQueue(q => [...q, 'asr']);
                 }
             };
             checkAndQueue();
         }
-    }, [isOfflineAsrEnabled, asrModelId, isAsrInitialized, isAsrInitializing]);
+    }, [isOfflineAsrEnabled, asrModelId, asrEngine, isAsrInitialized, isAsrInitializing]);
     
     // Queue OCR initialization
     useEffect(() => {
@@ -1210,11 +1234,19 @@ const App: React.FC = () => {
                  });
             }
         } else if (nextTask === 'asr') {
-            const model = ASR_MODELS.find(m => m.id === asrModelId);
-            if (model && asrWorkerRef.current) {
-                setIsAsrInitializing(true);
-                setAsrLoadingProgress({ file: '', progress: 0 });
-                asrWorkerRef.current.postMessage({ type: 'load', payload: { modelId: model.id, quantization: model.quantization } });
+            if (asrEngine === 'nemotron') {
+                if (asrWorkerRef.current) {
+                    setIsAsrInitializing(true);
+                    setAsrLoadingProgress({ file: '', progress: 0 });
+                    asrWorkerRef.current.postMessage({ type: 'load', payload: { asrProfile, asrBeamWidth } });
+                }
+            } else {
+                const model = ASR_MODELS.find(m => m.id === asrModelId);
+                if (model && asrWorkerRef.current) {
+                    setIsAsrInitializing(true);
+                    setAsrLoadingProgress({ file: '', progress: 0 });
+                    asrWorkerRef.current.postMessage({ type: 'load', payload: { modelId: model.id, quantization: model.quantization } });
+                }
             }
         } else if (nextTask === 'ocr') {
             const ocrModelConfig = { key: selectedOcrModel, ...OCR_MODELS[selectedOcrModel].paths };
@@ -1222,7 +1254,7 @@ const App: React.FC = () => {
         }
     }, [
         loadingQueue, isOfflineModelInitializing, isAsrInitializing, ocrEngineStatus,
-        offlineModelName, asrModelId, selectedOcrModel,
+        offlineModelName, asrModelId, selectedOcrModel, asrEngine, asrProfile, asrBeamWidth,
         offlineMaxTokens, offlineTopK, offlineTemperature, offlineRandomSeed, offlineSupportAudio, offlineAudioRealtime, offlineMaxNumImages,
         getOrCreateWorker, initializeOcr, showNotification, t
     ]);
@@ -1397,7 +1429,8 @@ const App: React.FC = () => {
                 };
 
                 if (onDataAvailable || onChunkAvailable) {
-                    recorder.start(3000); // 3 second chunks
+                    const timeslice = asrEngine === 'nemotron' ? 500 : 3000;
+                    recorder.start(timeslice);
                 } else {
                     recorder.start();
                 }
@@ -2008,7 +2041,10 @@ const App: React.FC = () => {
         newIsNoiseCancellationEnabled: boolean,
         newAudioGainValue: number,
         newSelectedOcrModel: keyof typeof OCR_MODELS,
-        newIsOcrAutoInitEnabled: boolean
+        newIsOcrAutoInitEnabled: boolean,
+        newAsrEngine: AsrEngineType,
+        newAsrProfile: NemotronProfile,
+        newAsrBeamWidth: NemotronBeamWidth
     ) => {
         setApiKey(newApiKey);
         setModelName(newModelName);
@@ -2017,6 +2053,9 @@ const App: React.FC = () => {
         setHuggingFaceApiKey(newHfApiKey);
         setOfflineModelName(newOfflineModel);
         setAsrModelId(newAsrModelId);
+        setAsrEngine(newAsrEngine);
+        setAsrProfile(newAsrProfile);
+        setAsrBeamWidth(newAsrBeamWidth);
         setIsOfflineModeEnabled(isOfflineEnabled);
         setIsOfflineAsrEnabled(newIsOfflineAsrEnabled);
         setIsRealtimeAsrEnabled(newIsRealtimeAsrEnabled);
@@ -2065,6 +2104,9 @@ const App: React.FC = () => {
         localStorage.setItem('audio-gain-value', JSON.stringify(newAudioGainValue));
         localStorage.setItem('selected-ocr-model', newSelectedOcrModel);
         localStorage.setItem('is-ocr-auto-init-enabled', JSON.stringify(newIsOcrAutoInitEnabled));
+        localStorage.setItem('asr-engine', newAsrEngine);
+        localStorage.setItem('asr-profile', newAsrProfile);
+        localStorage.setItem('asr-beam-width', JSON.stringify(newAsrBeamWidth));
     };
 
     const handleSelectHistory = (item: TranslationHistoryItem) => {
@@ -2112,19 +2154,29 @@ const App: React.FC = () => {
     const handleDownloadAsrModel = useCallback(async (modelId: string) => {
         if (isAsrInitializing || !asrWorkerRef.current) return;
         
+        setIsAsrInitializing(true);
+        setAsrLoadingProgress({ file: '', progress: 0 });
+
+        if (modelId === 'nemotron') {
+            asrWorkerRef.current.postMessage({
+                type: 'load',
+                payload: { asrProfile, asrBeamWidth }
+            });
+            return;
+        }
+
         const model = ASR_MODELS.find(m => m.id === modelId);
         if (!model) {
             showNotification(`ASR model ${modelId} not found.`, 'error');
+            setIsAsrInitializing(false);
             return;
         }
         
-        setIsAsrInitializing(true);
-        setAsrLoadingProgress({ file: '', progress: 0 });
         asrWorkerRef.current.postMessage({
             type: 'load',
             payload: { modelId: model.id, quantization: model.quantization }
         });
-    }, [isAsrInitializing, showNotification]);
+    }, [isAsrInitializing, showNotification, asrProfile, asrBeamWidth]);
 
     const handleClearAsrCache = useCallback(async () => {
         try {
@@ -2240,6 +2292,9 @@ const App: React.FC = () => {
                 currentIsRealtimeAsrEnabled={isRealtimeAsrEnabled}
                 currentIsWebSpeechApiEnabled={isWebSpeechApiEnabled}
                 currentAsrModelId={asrModelId}
+                currentAsrEngine={asrEngine}
+                currentAsrProfile={asrProfile}
+                currentAsrBeamWidth={asrBeamWidth}
                 currentIsNoiseCancellationEnabled={isNoiseCancellationEnabled}
                 currentAudioGainValue={audioGainValue}
                 asrModelsCacheStatus={asrModelsCacheStatus}

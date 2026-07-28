@@ -62,6 +62,10 @@ export interface EsearchOCROutput {
 
 export type OcrEngineStatus = 'uninitialized' | 'initializing' | 'ready' | 'error';
 
+export type AsrEngineType = 'whisper' | 'nemotron';
+export type NemotronProfile = 'TURBO' | 'FAST' | 'BALANCED' | 'NORMAL' | 'HIGH';
+export type NemotronBeamWidth = 1 | 2 | 3 | 4 | 5;
+
 export interface OcrModelConfig {
     key: string;
     detPath: string;
