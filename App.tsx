@@ -959,14 +959,16 @@ const App: React.FC = () => {
             asrWorkerRef.current.terminate();
         }
         
-        let workerUrl = new URL('./services/asr.worker.ts', import.meta.url);
+        let newWorker: Worker;
         if (asrEngine === 'nemotron') {
-            workerUrl = new URL('./services/nemotron.worker.ts', import.meta.url);
+            newWorker = new Worker(new URL('./services/nemotron.worker.ts', import.meta.url), {
+                type: 'module',
+            });
+        } else {
+            newWorker = new Worker(new URL('./services/asr.worker.ts', import.meta.url), {
+                type: 'module',
+            });
         }
-
-        const newWorker = new Worker(workerUrl, {
-            type: 'module',
-        });
         newWorker.addEventListener('message', onAsrWorkerMessage);
         asrWorkerRef.current = newWorker;
     }, [onAsrWorkerMessage, asrEngine]);
