@@ -42,24 +42,32 @@ const handleInit = async (payload: any) => {
             throw new Error('WebGPU is not supported.');
         }
 
-        const CDN_URL = 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/wasm/';
-        const LOCAL_URL = '/wasm/';
+        const CDN_URL = 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/wasm';
+        const LOCAL_URL = '/assets/wasm';
 
         try {
-            await loadLiteRtLm(CDN_URL);
-            console.log('Loaded LiteRT-LM from CDN');
-        } catch (e) {
-            console.warn('Failed to load LiteRT-LM from CDN, falling back to local /wasm/', e);
             (self as any).Module = {
                 locateFile: (path: string, prefix: string) => {
                     if (path.endsWith('.wasm')) {
-                        return '/assets/wasm/' + path;
+                        return CDN_URL + '/' + path;
+                    }
+                    return prefix + path;
+                }
+            };
+            await loadLiteRtLm(CDN_URL);
+            console.log('Loaded LiteRT-LM from CDN');
+        } catch (e) {
+            console.warn('Failed to load LiteRT-LM from CDN, falling back to local /assets/wasm/', e);
+            (self as any).Module = {
+                locateFile: (path: string, prefix: string) => {
+                    if (path.endsWith('.wasm')) {
+                        return LOCAL_URL + '/' + path;
                     }
                     return prefix + path;
                 }
             };
             await loadLiteRtLm(LOCAL_URL);
-            console.log('Loaded LiteRT-LM from local /wasm/');
+            console.log('Loaded LiteRT-LM from local /assets/wasm/');
         }
 
         const { maxTokens = 2048 } = options || {};
