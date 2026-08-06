@@ -1228,7 +1228,8 @@ const App: React.FC = () => {
                         maxTokens: offlineMaxTokens, topK: offlineTopK, temperature: offlineTemperature,
                         randomSeed: offlineRandomSeed, supportAudio: offlineSupportAudio, audioRealtime: offlineAudioRealtime, maxNumImages: offlineMaxNumImages,
                     };
-                    getOrCreateWorker().postMessage({ type: 'init', payload: { engine: 'mediapipe', modelBlob, modelSource: modelToLoad, options } });
+                    const engine = modelToLoad.toLowerCase().includes('gemma-4') ? 'litert-lm' : 'mediapipe';
+                    getOrCreateWorker().postMessage({ type: 'init', payload: { engine, modelBlob, modelSource: modelToLoad, options } });
                  }).catch(err => {
                     const message = err instanceof Error ? err.message : t('notifications.offlineModelInitFailed');
                     showNotification(message, 'error');

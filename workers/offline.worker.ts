@@ -4,7 +4,7 @@
 // and handling complex logic like two-step translations.
 
 let inferenceWorker: Worker | null = null;
-let currentEngine: 'mediapipe' | 'transformers' = 'mediapipe';
+let currentEngine: 'mediapipe' | 'transformers' | 'litert-lm' = 'mediapipe';
 let twoStepState: {
     resolve: (value: unknown) => void;
     reject: (reason?: any) => void;
@@ -118,6 +118,8 @@ self.onmessage = async (event: MessageEvent) => {
                 console.log(`Controller: Creating inference worker for ${engine}...`);
                 if (engine === 'transformers') {
                     inferenceWorker = new Worker(new URL('./transformers.worker.ts', import.meta.url), { type: 'module' });
+                } else if (engine === 'litert-lm') {
+                    inferenceWorker = new Worker(new URL('./litert-lm.worker.ts', import.meta.url));
                 } else {
                     inferenceWorker = new Worker(new URL('./mediapipe.worker.ts?url', import.meta.url), { type: 'classic' });
                 }
