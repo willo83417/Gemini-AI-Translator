@@ -17,6 +17,9 @@ import { deleteOcrModelCache } from './utils/db';
 import type { Language, TranslationHistoryItem, CustomOfflineModel, EsearchOCROutput, EsearchOCRItem, AsrEngineType, NemotronProfile, NemotronBeamWidth } from './types';
 import { LANGUAGES, OFFLINE_MODELS, OFFLINE_MODELS_TS, ASR_MODELS, OCR_MODELS } from './constants';
 import { GeminiLiveService } from './services/geminiLiveService';
+import { createVad } from '@fluidinference/fluidvad';
+// @ts-ignore
+import fluidvadWasmUrl from '@fluidinference/fluidvad/dist/fluidvad_bg.wasm?url';
 
 interface SpeechRecognition {
     continuous: boolean;
@@ -572,7 +575,6 @@ const App: React.FC = () => {
                     finalResult += chunk;
                     setTranslatedText(prev => prev.length === 0 ? chunk.trimStart() : prev + chunk);
                 };
-    
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set. Please add it in the settings.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set. Please add it in the settings.");
@@ -614,7 +616,7 @@ const App: React.FC = () => {
 
     const performReverseTranslate = useCallback(async (textToTranslate: string) => {
         if (!textToTranslate.trim()) {
-            setTranslatedText('');
+            setInputText('');
             return;
         }
 
@@ -657,7 +659,6 @@ const App: React.FC = () => {
                     finalResult += chunk;
                     setTranslatedText(prev => prev.length === 0 ? chunk.trimStart() : prev + chunk);
                 };
-
                 if (onlineProvider === 'openai') {
                     if (!apiKey) throw new Error("OpenAI API Key is not set.");
                     if (!openaiApiUrl) throw new Error("OpenAI API URL is not set.");
@@ -790,9 +791,9 @@ const App: React.FC = () => {
                     setIsLoading(false);
                     break;
                 case 'extract_text_error':
-                    showNotification(t('notifications.imageProcessingFailed', { errorMessage: payload.error }), 'error');
-                    setInputText('');
-                    setIsLoading(false);
+                    showNotification(t('notifications.imageProcessingFailed', { errorMessage }), 'error');
+            setInputText(''); 
+            setIsLoading(false);
                     break;
                 case 'extract_text_cancelled':
                     setInputText('');
@@ -905,11 +906,7 @@ const App: React.FC = () => {
                 break;
             case 'transcription-partial':
                 isAsrProcessingRef.current = false;
-                if (!isReverseTranslateRef.current) {
-                    setInputText(payload);
-                } else {
-                    setTranslatedText(payload);
-                }
+                setInputText(payload);
                 break;
             case 'transcription':
                 isAsrProcessingRef.current = false;
@@ -919,7 +916,7 @@ const App: React.FC = () => {
                 // Filter out common Whisper hallucinations and meaningless sounds
                 const isMeaningless = !transcribedText || 
                     /^[^a-zA-Z0-9\p{L}]+$/u.test(transcribedText) || // Only punctuation/symbols
-                    /^[\[\(].*[\]\)]$/.test(transcribedText) || // e.g. [BLANK_AUDIO], (clears throat)
+                    /^[\[\(].*[\]\)]$/.test(transcribedText) ||
                     ['恩', '嗯', '啊', '哦', '喔', '呃', 'um', 'uh', 'ah', 'oh'].includes(transcribedText.toLowerCase());
                 
                 if (isFinal) {
@@ -1386,57 +1383,140 @@ const App: React.FC = () => {
         if (isRecording || isAstRecording) return;
 
         navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(stream => {
-                audioChunksRef.current = [];
+            .then(async stream => {
                 lastProcessedSampleIndexRef.current = 0;
-                let chunkAccumulator: Blob[] = [];
                 onStopRecordingCallbackRef.current = onStop;
-                const recorder = new MediaRecorder(stream);
-                mediaRecorderRef.current = recorder;
 
-                recorder.ondataavailable = event => {
-                    if (event.data.size > 0) {
-                        audioChunksRef.current.push(event.data);
-                        chunkAccumulator.push(event.data);
-                        if (onDataAvailable) {
-                            const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
-                            const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-                            onDataAvailable(audioBlob);
-                        }
-                        if (onChunkAvailable && chunkAccumulator.length >= 3) {
-                            const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
-                            const chunkBlob = new Blob(audioChunksRef.current, { type: mimeType });
-                            onChunkAvailable(chunkBlob);
-                            chunkAccumulator = [];
-                        }
-                    }
-                };
+                const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(stream);
+                let lastNode: AudioNode = source;
 
-                recorder.onstop = () => {
-                    const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
-                    const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-                    if (onStopRecordingCallbackRef.current) {
-                        onStopRecordingCallbackRef.current(audioBlob);
-                    }
-                    stream.getTracks().forEach(track => track.stop());
-                    mediaRecorderRef.current = null;
-                    onStopRecordingCallbackRef.current = null;
-                    setIsRecording(false);
-                    setIsAstRecording(false);
-                };
-
-                recorder.onerror = (event: any) => {
-                    showNotification(`Recording error: ${event.error.message}`, 'error');
-                    setIsRecording(false);
-                    setIsAstRecording(false);
-                };
-
-                if (onDataAvailable || onChunkAvailable) {
-                    const timeslice = asrEngine === 'nemotron' ? 500 : 3000;
-                    recorder.start(timeslice);
-                } else {
-                    recorder.start();
+                if (isNoiseCancellationEnabled) {
+                    const filter = audioContext.createBiquadFilter();
+                    filter.type = 'highpass';
+                    filter.frequency.value = 100;
+                    lastNode.connect(filter);
+                    lastNode = filter;
                 }
+
+                if (audioGainValue && audioGainValue !== 1.0) {
+                    const gainNode = audioContext.createGain();
+                    gainNode.gain.value = audioGainValue;
+                    lastNode.connect(gainNode);
+                    lastNode = gainNode;
+                }
+
+                if (!globalThis.fluidVadWorkletUrl) {
+                    const workletCode = `
+                    class FluidVadProcessor extends AudioWorkletProcessor {
+                      constructor() {
+                        super();
+                        this._buffer = new Float32Array(512);
+                        this._fill = 0;
+                      }
+                      process(inputs) {
+                        const channel = inputs[0] && inputs[0][0];
+                        if (!channel) return true;
+                        let offset = 0;
+                        while (offset < channel.length) {
+                          const take = Math.min(this._buffer.length - this._fill, channel.length - offset);
+                          this._buffer.set(channel.subarray(offset, offset + take), this._fill);
+                          this._fill += take;
+                          offset += take;
+                          if (this._fill === this._buffer.length) {
+                            const frame = this._buffer.slice();
+                            this.port.postMessage(frame.buffer, [frame.buffer]);
+                            this._fill = 0;
+                          }
+                        }
+                        return true;
+                      }
+                    }
+                    registerProcessor("fluidvad-processor", FluidVadProcessor);
+                    `;
+                    const blob = new Blob([workletCode], { type: 'application/javascript' });
+                    (globalThis as any).fluidVadWorkletUrl = URL.createObjectURL(blob);
+                }
+
+                await audioContext.audioWorklet.addModule((globalThis as any).fluidVadWorkletUrl);
+                
+                const wasmResponse = await fetch(fluidvadWasmUrl);
+                const wasmBuffer = await wasmResponse.arrayBuffer();
+                const vad = await createVad({ threshold: 0.5, minSilenceDuration: 5.0, maxSpeechDuration:30, speechPadding:0.4 }, { wasm: wasmBuffer });
+                
+                const processor = new AudioWorkletNode(audioContext, "fluidvad-processor");
+
+                let accumulatedTotal: Float32Array[] = [];
+                let realtimeCounter = 0;
+
+                const mergeFloat32Arrays = (arrays: Float32Array[]): Float32Array => {
+                    const totalLength = arrays.reduce((acc, val) => acc + val.length, 0);
+                    const merged = new Float32Array(totalLength);
+                    let offset = 0;
+                    for (const arr of arrays) {
+                        merged.set(arr, offset);
+                        offset += arr.length;
+                    }
+                    return merged;
+                };
+
+                const float32ToWavBlob = (samples: Float32Array): Blob => {
+                    const buffer = audioContext.createBuffer(1, samples.length, 16000);
+                    buffer.copyToChannel(samples, 0);
+                    return audioBufferToWav(buffer);
+                };
+
+                processor.port.onmessage = (e) => {
+                    const samples = new Float32Array(e.data);
+                    accumulatedTotal.push(samples);
+
+                    const events = vad.push(samples);
+                    for (const event of events) {
+                        if (!event.isStart && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                            mediaRecorderRef.current.stop();
+                        }
+                    }
+                    
+                    if (vad.isSpeaking) {
+                        realtimeCounter++;
+                        if (onDataAvailable && realtimeCounter >= 16) {
+                            realtimeCounter = 0;
+                            const merged = mergeFloat32Arrays(accumulatedTotal);
+                            const blob = float32ToWavBlob(merged);
+                            onDataAvailable(blob);
+                        }
+                    } else {
+                        realtimeCounter = 0;
+                    }
+                };
+
+                lastNode.connect(processor);
+                processor.connect(audioContext.destination);
+
+                mediaRecorderRef.current = {
+                    state: 'recording',
+                    stop: () => {
+                        mediaRecorderRef.current.state = 'inactive';
+                        let finalBlob = new Blob([], { type: 'audio/wav' });
+                        if (accumulatedTotal.length > 0) {
+                            const merged = mergeFloat32Arrays(accumulatedTotal);
+                            finalBlob = float32ToWavBlob(merged);
+                        }
+                        
+                        if (onStopRecordingCallbackRef.current) {
+                            onStopRecordingCallbackRef.current(finalBlob);
+                        }
+                        
+                        stream.getTracks().forEach(track => track.stop());
+                        processor.disconnect();
+                        audioContext.close();
+                        mediaRecorderRef.current = null;
+                        onStopRecordingCallbackRef.current = null;
+                        setIsRecording(false);
+                        setIsAstRecording(false);
+                    },
+                    mimeType: 'audio/wav'
+                } as any;
             })
             .catch(err => {
                 showNotification(`Could not start recording: ${err.message}`, 'error');
@@ -1546,7 +1626,7 @@ const App: React.FC = () => {
                 accumulatedTranslatedRef.current = '';
                 currentActiveInputRef.current = '';
                 currentActiveTranslatedRef.current = '';
-                setTranslatedText('');
+                setInputText('');
                 setIsRecording(true);
                 isReverseTranslateRef.current = false;
                 setInputText(t('notifications.liveTranslateListening'));
@@ -1570,7 +1650,7 @@ const App: React.FC = () => {
                  return;
             }
             
-            setTranslatedText('');
+            setInputText('');
             setIsRecording(true);
             setInputText(t('translationInput.placeholderListening'));
 
@@ -1582,7 +1662,7 @@ const App: React.FC = () => {
                     }
                     setIsTranscribing(true);
                     try {
-                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
+                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: false, gain: 1.0 });
                         if (asrWorkerRef.current) {
                             asrWorkerRef.current.postMessage({ 
                                 type: 'transcribe', 
@@ -1607,7 +1687,7 @@ const App: React.FC = () => {
                     if (isAsrProcessingRef.current) return;
                     try {
                         isAsrProcessingRef.current = true;
-                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
+                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: false, gain: 1.0 });
                         if (asrWorkerRef.current) {
                             asrWorkerRef.current.postMessage({ 
                                 type: 'transcribe', 
@@ -1634,7 +1714,7 @@ const App: React.FC = () => {
                      setInputText(t('notifications.transcribing'));
                      setIsTranscribing(true);
                      handleStartRecording(async (audioBlob) => {
-                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue }); 
+                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: false, gain: 1.0 }); 
                         const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
                         const audioBuffer = tempAudioContext.createBuffer(1, audioData.length, 16000);
                         audioBuffer.copyToChannel(audioData, 0);
@@ -1654,7 +1734,7 @@ const App: React.FC = () => {
                         if (isAsrProcessingRef.current) return;
                         try {
                             isAsrProcessingRef.current = true;
-                            const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue }); 
+                            const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: false, gain: 1.0 }); 
                             
                             const newAudioData = audioData.slice(lastProcessedSampleIndexRef.current);
                             lastProcessedSampleIndexRef.current = audioData.length;
@@ -1695,7 +1775,7 @@ const App: React.FC = () => {
                     const controller = new AbortController();
                     audioAbortControllerRef.current = controller;
                     try {
-                        const processedBlob = await processAudioToWav(audioBlob, isNoiseCancellationEnabled, audioGainValue);
+                        const processedBlob = await processAudioToWav(audioBlob, false, 1.0);
                         let transcribedText = '';
                         if (onlineProvider === 'openai') {
                             const langCode = sourceLang.code.split('-')[0];
@@ -1733,7 +1813,7 @@ const App: React.FC = () => {
                 accumulatedTranslatedRef.current = '';
                 currentActiveInputRef.current = '';
                 currentActiveTranslatedRef.current = '';
-                setTranslatedText('');
+                setInputText('');
                 setIsAstRecording(true);
                 isReverseTranslateRef.current = true;
                 setInputText(t('notifications.liveTranslateListeningReverse'));
@@ -1770,7 +1850,7 @@ const App: React.FC = () => {
                     }
                     setIsTranscribing(true);
                     try {
-                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
+                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: false, gain: 1.0 });
                         if (asrWorkerRef.current) {
                             asrWorkerRef.current.postMessage({ 
                                 type: 'transcribe', 
@@ -1786,7 +1866,7 @@ const App: React.FC = () => {
                         }
                     } catch (err) {
                         console.error(err);
-                        setInputText('');
+                        setTranslatedText('');
                         setIsTranscribing(false);
                         isReverseTranslateRef.current = false;
                         const message = err instanceof Error ? err.message : 'Transcription failed.';
@@ -1796,7 +1876,7 @@ const App: React.FC = () => {
                     if (isAsrProcessingRef.current) return;
                     try {
                         isAsrProcessingRef.current = true;
-                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue });
+                        const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: false, gain: 1.0 });
                         if (asrWorkerRef.current) {
                             asrWorkerRef.current.postMessage({ 
                                 type: 'transcribe', 
@@ -1823,7 +1903,7 @@ const App: React.FC = () => {
                     setInputText(t('notifications.transcribing'));
                     setIsTranscribing(true);
                     handleStartRecording(async (audioBlob) => {
-                       const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue }); 
+                       const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: false, gain: 1.0 }); 
                        const tempAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
                        const audioBuffer = tempAudioContext.createBuffer(1, audioData.length, 16000);
                        audioBuffer.copyToChannel(audioData, 0);
@@ -1843,7 +1923,7 @@ const App: React.FC = () => {
                        if (isAsrProcessingRef.current) return;
                        try {
                            isAsrProcessingRef.current = true;
-                           const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: isNoiseCancellationEnabled, gain: audioGainValue }); 
+                           const audioData = await processAudioForTranscription(audioBlob, { noiseSuppression: false, gain: 1.0 }); 
                            
                            const newAudioData = audioData.slice(lastProcessedSampleIndexRef.current);
                            lastProcessedSampleIndexRef.current = audioData.length;
@@ -1884,7 +1964,7 @@ const App: React.FC = () => {
                     const controller = new AbortController();
                     audioAbortControllerRef.current = controller;
                     try {
-                        const processedBlob = await processAudioToWav(audioBlob, isNoiseCancellationEnabled, audioGainValue);
+                        const processedBlob = await processAudioToWav(audioBlob, false, 1.0);
                         let transcribedText = '';
                         if (onlineProvider === 'openai') {
                             const langCode = targetLang.code.split('-')[0];
@@ -1916,7 +1996,7 @@ const App: React.FC = () => {
         setIsCameraOpen(false);
         setIsLoading(true);
         setInputText(t('notifications.processingImage'));
-        setTranslatedText('');
+        setInputText('');
     
         // Await two animation frames AND a short timeout to securely flush the React unmount 
         // before starting heavy worker tasks (WebGPU compilation might freeze GPU/UI threads)
@@ -1959,7 +2039,7 @@ const App: React.FC = () => {
                     await performTranslate(extractedText);
                 } else {
                     showNotification(t('notifications.noTextInImage'), 'info');
-                    setTranslatedText('');
+                    setInputText('');
                     setIsLoading(false);
                 }
                 return;
