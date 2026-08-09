@@ -792,8 +792,8 @@ const App: React.FC = () => {
                     break;
                 case 'extract_text_error':
                     showNotification(t('notifications.imageProcessingFailed', { errorMessage }), 'error');
-            setInputText(''); 
-            setIsLoading(false);
+					setInputText(''); 
+					setIsLoading(false);
                     break;
                 case 'extract_text_cancelled':
                     setInputText('');
@@ -2190,6 +2190,19 @@ const App: React.FC = () => {
         localStorage.setItem('asr-engine', newAsrEngine);
         localStorage.setItem('asr-profile', newAsrProfile);
         localStorage.setItem('asr-beam-width', JSON.stringify(newAsrBeamWidth));
+
+        if (newAsrEngine === 'nemotron' && asrWorkerRef.current) {
+            if (newAsrProfile !== asrProfile || newAsrBeamWidth !== asrBeamWidth) {
+                setIsAsrInitializing(true);
+                asrWorkerRef.current.postMessage({ type: 'load', payload: { asrProfile: newAsrProfile, asrBeamWidth: newAsrBeamWidth } });
+            }
+        } else if (newAsrEngine === 'transformers' && asrWorkerRef.current) {
+            if (newAsrModelId !== asrModelId) {
+                // If transformers model changed, maybe we don't auto-load here, 
+                // because downloading takes time and there is a "Download" button for it.
+                // But wait, the user didn't ask for that. We'll just handle nemotron.
+            }
+        }
     };
 
     const handleSelectHistory = (item: TranslationHistoryItem) => {

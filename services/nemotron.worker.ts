@@ -35,9 +35,21 @@ class NemotronTranscriber {
             return;
         }
 
-        this.loading = true;
+                this.loading = true;
         try {
             if (this.engine) {
+                if (this.currentBeamWidth === beamWidth && this.currentProfile !== profile) {
+                    post({ type: 'log', payload: `Switching Nemotron ASR profile to ${profile}...` });
+                    await (this.engine as any).switchProfile(profile);
+                    this.currentProfile = profile;
+                    this.session = null;
+                    this.lastProcessedIndex = 0;
+                    this.accumulatedText = '';
+                    post({ type: 'loaded', payload: true });
+                    post({ type: 'log', payload: `Nemotron ASR profile switched successfully to ${profile}.` });
+                    this.loading = false;
+                    return;
+                }
                 this.session = null;
                 this.engine = null;
             }
