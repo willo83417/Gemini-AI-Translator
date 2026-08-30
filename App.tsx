@@ -1442,7 +1442,7 @@ const App: React.FC = () => {
                 
                 const wasmResponse = await fetch(fluidvadWasmUrl);
                 const wasmBuffer = await wasmResponse.arrayBuffer();
-                const vad = await createVad({ threshold: 0.5, minSilenceDuration: 5.0, maxSpeechDuration:30, speechPadding:0.4 }, { wasm: wasmBuffer });
+                const vad = await createVad({ threshold: 0.5, minSilenceDuration: 1.0, maxSpeechDuration:30, speechPadding:0.4 }, { wasm: wasmBuffer });
                 
                 const processor = new AudioWorkletNode(audioContext, "fluidvad-processor");
 
@@ -2350,7 +2350,7 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {isCameraOpen && <CameraView onClose={() => setIsCameraOpen(false)} onImageCaptured={handleImageCaptured} />}
+            {isCameraOpen && <CameraView onClose={() => setIsCameraOpen(false)} onImageCaptured={handleImageCaptured} imageFormat={(!isOfflineModeEnabled && onlineProvider === 'openai') ? 'image/jpeg' : 'image/webp'} />}
             
             <SettingsModal 
                 isOpen={isSettingsOpen}

@@ -35,7 +35,7 @@ class NemotronTranscriber {
             return;
         }
 
-                this.loading = true;
+        this.loading = true;
         try {
             if (this.engine) {
                 if (this.currentBeamWidth === beamWidth && this.currentProfile !== profile) {
@@ -67,7 +67,8 @@ class NemotronTranscriber {
                     post({ type: 'log', payload: `Nemotron EP [${isEncoder ? 'encoder' : 'decoder'}]: ${provider} ${note || ''}` });
                 }
             }, {
-                profile: profile,
+                wasmPaths:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/',
+				profile: profile,
                 beamWidth: beamWidth,
                 numThreads: 0
             });
@@ -191,9 +192,14 @@ class NemotronTranscriber {
     }
 
     cancel() {
-        this.abortCurrent = true;
         this.processingQueue = [];
-        this.isProcessing = false;
+        if (this.isProcessing) {
+            this.abortCurrent = true;
+        } else {
+            this.session = null;
+            this.lastProcessedIndex = 0;
+            this.accumulatedText = '';
+        }
     }
 }
 

@@ -7,9 +7,10 @@ import { XIcon, FlashOnIcon, FlashOffIcon, GalleryIcon } from './icons';
 interface CameraViewProps {
     onClose: () => void;
     onImageCaptured: (imageDataUrl: string) => void;
+    imageFormat?: 'image/webp' | 'image/jpeg';
 }
 
-const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => {
+const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured, imageFormat = 'image/webp' }) => {
     const { t } = useTranslation();
     const webcamRef = useRef<Webcam>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -146,20 +147,15 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
                         const ctx = canvas.getContext('2d');
 						if (ctx) {
 							ctx.drawImage(img, 0, 0, width, height);
-							// 嘗試使用 WebP，如果瀏覽器不支援則回退到 JPEG
 							try {
-								const webpDataUrl = canvas.toDataURL('image/webp', 0.9);  
-								// 可選：驗證 WebP 是否有效（某些舊版瀏覽器可能返回空字串）
-								if (webpDataUrl && !webpDataUrl.startsWith('data:image/webp;base64,')) {
-									//console.warn('[CameraView] WebP conversion failed, falling back to JPEG');
+								const dataUrl = canvas.toDataURL(imageFormat, 0.9);
+								if (imageFormat === 'image/webp' && dataUrl && !dataUrl.startsWith('data:image/webp;base64,')) {
 									const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
 									setPreviewImage(jpegDataUrl);
 								} else {
-									setPreviewImage(webpDataUrl);
+									setPreviewImage(dataUrl);
 								}
 							} catch (err) {
-								//console.warn('[CameraView] WebP conversion failed:', err);
-								// Fallback to JPEG
 								const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
 								setPreviewImage(jpegDataUrl);
 							}
@@ -222,7 +218,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onClose, onImageCaptured }) => 
                         <Webcam
                             ref={webcamRef}
                             audio={false}
-                            screenshotFormat="image/webp"
+                            screenshotFormat={imageFormat}
                             screenshotQuality={0.9}
                             videoConstraints={videoConstraints}
                             onUserMedia={handleUserMedia}

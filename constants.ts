@@ -94,10 +94,10 @@ export const ASR_MODELS: AsrModel[] = [
         size: '~590 MB'
     },
 	{
-        id: 'willopcbeta/lite-whisper-small-fast-ONNX-v2',
+        id: 'willopcbeta/lite-whisper-small-fast-ONNX',
         name: 'lite-whisper-small-fast',
         quantization: {
-            encoder_model: 'q4f16',
+            encoder_model: 'q4',
             decoder_model_merged: 'q4',
         },
         size: '~280 MB'
@@ -112,11 +112,11 @@ export const ASR_MODELS: AsrModel[] = [
         size: '~290 MB'
     },
     {
-        id: 'Xenova/whisper-base',
+        id: 'nico-martin/whisper-base-ONNX',
         name: 'Whisper Base',
         quantization: {
-            encoder_model: 'q4',
-            decoder_model_merged: 'q4',  //decoder_model_with_past: 'q4'
+            encoder_model: 'f32',
+            decoder_model_merged: 'f32',  //decoder_model_with_past: 'q4'
         },
         size: '~150 MB'
     }

@@ -232,10 +232,11 @@ class Transcriber {
     }
 
     cancel() {
-        this.abortCurrent = true;
-        this.stoppingCriteria.interrupt();
         this.processingQueue = [];
-        this.isProcessing = false;
+        if (this.isProcessing) {
+            this.abortCurrent = true;
+            this.stoppingCriteria.interrupt();
+        }
         post({ type: 'log', payload: 'ASR transcription cancelled.' });
     }
 }
