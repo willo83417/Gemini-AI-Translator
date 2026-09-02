@@ -958,11 +958,11 @@ const App: React.FC = () => {
         
         let newWorker: Worker;
         if (asrEngine === 'nemotron') {
-            newWorker = new Worker(new URL('./services/nemotron.worker.ts', import.meta.url), {
+            newWorker = new Worker(new URL('./workers/nemotron.worker.ts', import.meta.url), {
                 type: 'module',
             });
         } else {
-            newWorker = new Worker(new URL('./services/asr.worker.ts', import.meta.url), {
+            newWorker = new Worker(new URL('./workers/transformersASR.worker.ts', import.meta.url), {
                 type: 'module',
             });
         }

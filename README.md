@@ -9,7 +9,7 @@ English | [中文](./README_zh.md) |
 
 # Gemini AI Translator
 
-This is a modern translation application powered by the Google Gemini API. It provides a clean, mobile-first user interface for fast and accurate text, voice, and image translation between multiple languages, and supports both online and offline modes.  
+This is a simple and modern translation app that supports Google Gemini and OpenAI compatible APIs; it also supports offline open-source models to prevent sensitive data leakage. It offers fast and accurate multilingual text translation with a clean, mobile-first user interface.  
 🚀[Live Demo](https://willo83417.github.io/Gemini-AI-Translator/)  
 
 ## 📸 Screenshots
@@ -87,9 +87,12 @@ Automatically saves the last 50 translation records for users to view and reuse 
   - `asrService.ts`: Manages audio processing and transcription services.
   - `downloadManager.ts`: Responsible for downloading, pausing, resuming, and deleting offline models.
 - `/workers`: Contains Web Workers for background processing to keep the UI responsive.
-  - `worker.ts`: Main inference worker for offline LLM (Gemma).
+  - `litert-lm.worker.ts`: Main inference worker for offline LLM using LiteRT.
+  - `mediapipe.worker.ts`: Legacy worker for offline LLM using MediaPipe.
   - `offline.worker.ts`: Background worker for offline model management.
-  - `asr.worker.ts`: Worker for audio processing and ASR.
+  - `nemotron.worker.ts`: Worker for real-time speech recognition (ASR) using ONNX Runtime (Nemotron).
+  - `transformersASR.worker.ts`: Worker for speech recognition (ASR) using Hugging Face Transformers.js (Whisper).
+  - `ocr.worker.ts`: Worker for local image text extraction (OCR) using esearch-ocr and ONNX Runtime.
 - `/hooks`: Custom React hooks for specialized logic.
   - `usePaddleOcr.ts`: Hook for local OCR using PaddleOCR.
   - `useWebSpeech.ts`: Hook for Web Speech API integration.
@@ -141,12 +144,12 @@ The main interface is divided into two blocks, one for input and one for output.
 
 ## Technical Stack🚀
 
-- **Frontend Framework**: React
+- **Frontend Framework**: React 19
 - **Language**: TypeScript
 - **Build Tool**: Vite
 - **Styles**: Tailwind CSS
-- **Offline Models**: Google Gemma
-- **Offline Inference Engine**: MediaPipe (`@mediapipe/tasks-genai`)
+- **Offline Models**: Google Gemma, Whisper, Nemotron, PaddleOCR
+- **Offline Inference Engine**: LiteRT, MediaPipe, Transformers.js, ONNX Runtime Web
 - **Online Translation**: Google Gemini API (`@google/genai`) / OpenAI API
 - **Internationalization**: i18next
 

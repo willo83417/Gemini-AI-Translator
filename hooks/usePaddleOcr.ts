@@ -25,7 +25,7 @@ export const usePaddleOcr = () => {
     const initWorker = useCallback(() => {
         //console.log('[usePaddleOcr] Initializing worker...');
         cleanup();
-        const worker = new Worker(new URL('../services/ocr.worker.ts', import.meta.url), { type: 'module' });
+        const worker = new Worker(new URL('../workers/ocr.worker.ts', import.meta.url), { type: 'module' });
         
         worker.onmessage = (e) => {
             const { type, payload } = e.data;

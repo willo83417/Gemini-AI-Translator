@@ -22,7 +22,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uA68LGio1CJePNXz2emCco
 
 # Gemini AI Translator
 
-這是一個使用 Google Gemini API 驅動的現代翻譯應用程式。它提供了一個乾淨、行動裝置優先的使用者介面，可在多種語言之間進行快速準確的文字、語音和圖像翻譯，並支援線上和離線模式。  
+這是一個簡潔且現代的翻譯應用程式，支援 Google Gemini 與 OpenAI 相容 API；同時也支援離線開源模型以防止敏感資料外洩。它提供了一個乾淨、行動裝置優先的使用者介面，可在多種語言之間進行快速準確的文字翻譯。  
 🚀[Live Demo](https://willo83417.github.io/Gemini-AI-Translator-offline/ "Gemini AI Translator")
 
 ## 📸 截圖  
@@ -103,9 +103,12 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uA68LGio1CJePNXz2emCco
   - `asrService.ts`: 管理音訊處理與語音辨識服務。
   - `downloadManager.ts`: 負責離線模型的下載、暫停、續傳和刪除。
 - `/workers`: 包含 Web Workers，用於背景處理以保持 UI 響應。
-  - `worker.ts`: 離線 LLM (Gemma) 的主要推論 Worker。
+  - `litert-lm.worker.ts`: 離線 LLM 的主要推論 Worker (使用 LiteRT)。
+  - `mediapipe.worker.ts`: 離線 LLM 的傳統推論 Worker (使用 MediaPipe)。
   - `offline.worker.ts`: 離線模型管理的背景 Worker。
-  - `asr.worker.ts`: 音訊處理與 ASR 的 Worker。
+  - `nemotron.worker.ts`: 使用 ONNX Runtime 進行即時語音辨識 (ASR) 的 Worker (Nemotron 模型)。
+  - `transformersASR.worker.ts`: 使用 Hugging Face Transformers.js 進行語音辨識 (ASR) 的 Worker (Whisper 模型)。
+  - `ocr.worker.ts`: 使用 esearch-ocr 與 ONNX Runtime 進行本地圖像文字擷取 (OCR) 的 Worker。
 - `/hooks`: 用於特定邏輯的自訂 React Hook。
   - `usePaddleOcr.ts`: 使用 PaddleOCR 進行本地 OCR 的 Hook。
   - `useWebSpeech.ts`: Web Speech API 整合的 Hook。
@@ -154,12 +157,12 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uA68LGio1CJePNXz2emCco
 
 ## 技術棧🚀
 
-- **前端框架**: React
+- **前端框架**: React 19
 - **語言**: TypeScript
 - **建構工具**: Vite
 - **樣式**: Tailwind CSS
-- **離線模型**: Google Gemma
-- **離線推論引擎**: MediaPipe (`@mediapipe/tasks-genai`)
+- **離線模型**: Google Gemma, Whisper, Nemotron, PaddleOCR
+- **離線推論引擎**: LiteRT, MediaPipe, Transformers.js, ONNX Runtime Web
 - **線上翻譯**: Google Gemini API (`@google/genai`) / OpenAI API
 - **國際化**: i18next  
 
